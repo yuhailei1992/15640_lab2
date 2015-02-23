@@ -5,6 +5,12 @@
 
 import java.io.*;
 import java.util.*;
+import java.net.MalformedURLException;
+import java.rmi.Naming;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+
 class Proxy {
 	public static class FileProperty {
 		String filename;
@@ -18,6 +24,22 @@ class Proxy {
 		}
 		
 	}
+	
+	public static IServer getServerInstance(String ip, int port) {
+	    String url = String.format("//%s:%d/ServerService", ip, port);
+	    try {
+	      return (IServer) Naming.lookup (url);
+	    } catch (MalformedURLException e) {
+	      //you probably want to do logging more properly
+	      System.err.println("Bad URL" + e);
+	    } catch (RemoteException e) {
+	      System.err.println("Remote connection refused to url "+ url + " " + e);
+	    } catch (NotBoundException e) {
+	      System.err.println("Not bound " + e);
+	    }
+	    return null;
+  	}
+	
 	private static class FileHandler implements FileHandling {
 
 		HashMap<String, Integer> fd_map;
