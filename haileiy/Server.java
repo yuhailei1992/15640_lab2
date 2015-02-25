@@ -32,7 +32,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 				ver = -1;
 			}
 		} catch (Exception e) {
-			System.out.println("Error in getVersion");
+			System.err.println("Error in getVersion");
 		}
 		return ver;
 	}
@@ -45,7 +45,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 			File file = new File(localpath);
 			return file;
 		} catch (Exception e) {
-			System.out.println("Error in getFile");
+			System.err.println("Error in getFile");
 			return null;
 		}
 	}
@@ -73,12 +73,12 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 		
 		// check if the file already exists
 		if (file.exists()) {
-			System.err.println("Server::the file already exists, need to delete it first, then write");
+			System.err.println("The file already exists, need to delete it first, then write");
 			System.err.println("The file is " + localpath + "of version " + versionMap.get(orig_path));
 			if(file.delete()){
-    			System.err.println("Server::" + file.getName() + " is deleted!");
+    			System.err.println(file.getName() + " is deleted!");
     		}else{
-    			System.err.println("Server:: Delete operation is failed.");
+    			System.err.println("Delete operation failed.");
     		}
 		}
 		try {
@@ -86,7 +86,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
             fos.write(b);
             fos.close();
 		} catch (Exception e) {
-			System.out.println("Error while writing to servercache");
+			System.err.println("Error while writing to servercache");
 		}
 	}
 	
@@ -105,11 +105,11 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
               fileInputStream.read(b);
               
         } catch (FileNotFoundException e) {
-                     System.out.println("File Not Found.");
+                     System.err.println("File Not Found.");
                      e.printStackTrace();
         }
          catch (IOException e1) {
-                  System.out.println("Error Reading The File.");
+                  System.err.println("Error Reading The File.");
                    e1.printStackTrace();
         }
         return b;
@@ -121,6 +121,9 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 		System.err.println("Cache server has started");
 		serverport = Integer.parseInt(args[0]);
 		serverpath = args[1];
+		if (serverpath.charAt(serverpath.length()-1) != '/') {
+			serverpath += '/';
+		}
 
 		try {
 			//create the RMI registry if it doesn't exist.
@@ -135,7 +138,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 			server = new Server(); 
 			final File folder = new File(serverpath);
 		    for (final File fileEntry : folder.listFiles()) {
-		    	System.out.println(fileEntry.getName());
+		    	System.err.println(fileEntry.getName());
 		    	versionMap.put(fileEntry.getName(), 0);// initialize the version to 0
 		    }
 		}

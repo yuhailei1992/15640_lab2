@@ -12,15 +12,16 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 
 class Proxy {
+	static HashMap<String, Integer> version_map;
 	
 	/**
 	 * singleton 
 	 */
+	/*
 	public static class VersionControl {
 		protected static HashMap<String, Integer> version_map;
 		private static VersionControl instance = null;
 	    protected VersionControl() {
-	      // Exists only to defeat instantiation.
 	    }
 	    public static VersionControl getInstance() {
 	       if(instance == null) {
@@ -30,6 +31,7 @@ class Proxy {
 	       return instance;
 	    }
 	 }
+	 */
 
 	
 	/* static variables acquired from command line */
@@ -74,7 +76,7 @@ class Proxy {
 		HashMap<String, FileProperty> prop_map;
 		HashMap<String, File> file_map;
 		HashMap<String, String> copy_map;// store the copy relationship between files
-		static HashMap<String, Integer> version;
+		
 		 // store the version of files TODO
 		IServer server;
 		int locallabel;
@@ -88,8 +90,7 @@ class Proxy {
 			prop_map = new HashMap<String, FileProperty>();
 			file_map = new HashMap<String, File>();
 			copy_map = new HashMap<String, String>();
-			version = new HashMap<String, Integer>();
-			//version_map = new HashMap<String, Integer>();
+			
 			locallabel = 0;
 			// get an instance of RMI
 			try{
@@ -124,9 +125,9 @@ class Proxy {
 		 */
 		public synchronized int getProxyVersion(String path) {
 			System.err.println("getproxyversion for " + path);
-			if (VersionControl.getInstance().version_map.containsKey(path)) {
+			if (Proxy.version_map.containsKey(path)) {
 				System.err.println("getproxyversion has this record");
-				return VersionControl.getInstance().version_map.get(path);
+				return Proxy.version_map.get(path);
 			} else {
 				return -1;
 			}
@@ -148,7 +149,7 @@ class Proxy {
 	            fos.write(b);
 	            fos.close();
 	            
-	            VersionControl.getInstance().version_map.put(orig_path, server.getVersion(orig_path));
+	            Proxy.version_map.put(orig_path, server.getVersion(orig_path));
 			} catch (Exception e) {
 				System.err.println("Error in getFileFromServer");
 				e.printStackTrace();
@@ -165,7 +166,6 @@ class Proxy {
 		public int open(String orig_path, OpenOption o) {
 			// Below is for checkpoint 2
 			String localpath = proxypath + orig_path;// append the file name to cache
-			// System.out.println(localpath);
 			String newfilepath = "";
 			File localfile = null;
 			try {
@@ -188,7 +188,7 @@ class Proxy {
 							System.err.println("Open::The proxy has a stale version" + proxyversion + ", must fetch " + serverversion + "from server");
 							// fetch from server
 							getFileFromServer(orig_path);
-							VersionControl.getInstance().version_map.put(orig_path, serverversion);
+							Proxy.version_map.put(orig_path, serverversion);
 						}
 					}
 				} else {// the file doesn't exist
@@ -198,7 +198,7 @@ class Proxy {
 					} else {
 						System.err.println("Open::File exists at server, but no local copy, fetching from server...");
 						getFileFromServer(orig_path);
-						VersionControl.getInstance().version_map.put(orig_path, serverversion);
+						Proxy.version_map.put(orig_path, serverversion);
 						System.err.println("Open::Now we have file of version " + getProxyVersion(orig_path));
 					}
 				}
@@ -307,11 +307,11 @@ class Proxy {
 					raf_map.remove(raf);
 					// update propagate
 					try {
-						if (VersionControl.getInstance().version_map.get(orig_path) > server.getVersion(orig_path)) { // this is tricky
+						if (Proxy.version_map.get(orig_path) > server.getVersion(orig_path)) { // this is tricky
 						// need to update
 							System.err.println("Close::The file at proxy is modified, need to update in server");
 							File uploadfile = new File(localpath);
-							System.err.println("The file is " + uploadfile + "of version " + VersionControl.getInstance().version_map.get(orig_path));
+							System.err.println("The file is " + uploadfile + "of version " + Proxy.version_map.get(orig_path));
 							byte[] uploadb = new byte[(int) uploadfile.length()];
 							FileInputStream fileInputStream = new FileInputStream(uploadfile);
 							fileInputStream.read(uploadb);
@@ -364,11 +364,11 @@ class Proxy {
 				// update versionmap
 				String orig_path = path_map.get(fd);
 				String localpath = proxypath + orig_path;
-				if (VersionControl.getInstance().version_map.containsKey(orig_path)) {
-					VersionControl.getInstance().version_map.put(orig_path, VersionControl.getInstance().version_map.get(orig_path) + 1);//checkpoint2
-					System.err.println("Proxy::write. The version has been updated to " + VersionControl.getInstance().version_map.get(orig_path));
+				if (Proxy.version_map.containsKey(orig_path)) {
+					Proxy.version_map.put(orig_path, Proxy.version_map.get(orig_path) + 1);//checkpoint2
+					System.err.println("Proxy::write. The version has been updated to " + Proxy.version_map.get(orig_path));
 				} else {
-					VersionControl.getInstance().version_map.put(orig_path, 1);
+					Proxy.version_map.put(orig_path, 1);
 					System.err.println("Proxy::write. The version is 1");
 				}
 				RandomAccessFile raf = raf_map.get(orig_path);
@@ -520,9 +520,11 @@ class Proxy {
 		Proxy.ip = args[0];
 		Proxy.port = Integer.parseInt(args[1]);
 		Proxy.proxypath = args[2];
+		if (Proxy.proxypath.charAt(Proxy.proxypath.length()-1) != '/') {
+			Proxy.proxypath += '/';
+		}
 		Proxy.proxycachesize = Integer.parseInt(args[3]);
-		//HashMap<String, Integer> version_map = new HashMap<String, Integer>();
-		
+		Proxy.version_map = new HashMap<String, Integer>();
 		(new RPCreceiver(new FileHandlingFactory())).run();
 	}
 }
