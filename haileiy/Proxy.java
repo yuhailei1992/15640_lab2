@@ -12,6 +12,30 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 
 class Proxy {
+	
+	public static class VersionControl {
+		protected static HashMap<String, Integer> version_map;
+		private static VersionControl instance = null;
+	    protected VersionControl() {
+	      // Exists only to defeat instantiation.
+	    }
+	    public static VersionControl getInstance() {
+	       if(instance == null) {
+	    	   version_map = new HashMap<String, Integer>();
+	           instance = new VersionControl();
+	       }
+	       return instance;
+	    }
+	 }
+
+	
+	/* static variables acquired from command line */
+	public static String ip;
+	public static int port;
+	public static String proxypath;
+	public static int proxycachesize;
+	
+	/* fileproperty */
 	public static class FileProperty {
 		String filename;
 		boolean isReadOnly;
@@ -22,15 +46,14 @@ class Proxy {
 			isReadOnly = false;
 			isDirectory = false;
 		}
-		
 	}
 	
+	/* RMI related */
 	public static IServer getServerInstance(String ip, int port) {
 	    String url = String.format("//%s:%d/ServerService", ip, port);
 	    try {
 	      return (IServer) Naming.lookup (url);
 	    } catch (MalformedURLException e) {
-	      //you probably want to do logging more properly
 	      System.err.println("Bad URL" + e);
 	    } catch (RemoteException e) {
 	      System.err.println("Remote connection refused to url "+ url + " " + e);
@@ -47,6 +70,10 @@ class Proxy {
 		HashMap<String, RandomAccessFile> raf_map;
 		HashMap<String, FileProperty> prop_map;
 		HashMap<String, File> file_map;
+		HashMap<String, String> copy_map;// store the copy relationship between files
+		 // store the version of files TODO
+		IServer server;
+		int locallabel;
 
 		// constructor
 		public FileHandler() {
@@ -56,12 +83,22 @@ class Proxy {
 			raf_map = new HashMap<String, RandomAccessFile>();
 			prop_map = new HashMap<String, FileProperty>();
 			file_map = new HashMap<String, File>();
+			copy_map = new HashMap<String, String>();
+			version_map = new HashMap<String, Integer>();
+			locallabel = 0;
+			// get an instance of RMI
+			try{
+				server = getServerInstance(ip, port);
+			}
+			catch(Exception e) {
+				e.printStackTrace(); //you should actually handle exceptions properly
+			}
 		}
 
 		/**
 		 * return the first valid file descriptor
 		 */
-		private int getNewFd(String path) {
+		private synchronized int getNewFd(String path) {
 			for (int i = 3; ; i++) {
 				if (!path_map.containsKey(i)) {
 					return i;
@@ -70,17 +107,107 @@ class Proxy {
 		}
 		
 		/**
+		 * return the latest local label, and increment it
+		 */
+		public synchronized int getLocalLabel () {
+			locallabel++;
+			return locallabel;
+		}
+		
+		/**
+		 * get the version of local file
+		 */
+		public synchronized int getProxyVersion(String path) {
+			System.err.println("getproxyversion for " + path);
+			if (version_map.containsKey(path)) {
+				System.err.println("getproxyversion has this record");
+				return version_map.get(path);
+			} else {
+				return -1;
+			}
+		}
+		
+		/**
+		 * this function will get the file from server, then write it to local directory
+		 * also, it will update the versionmap
+		 */
+		public int getFileFromServer(String orig_path) {
+			System.err.println("Proxy::getFileFromServer");
+			try {
+				byte[] b = server.getFileContent(orig_path);
+				// get the complete path at the proxy
+				String localpath = proxypath + orig_path;
+				// write the byte array to the file
+	            FileOutputStream fos = new FileOutputStream(localpath);
+
+	            fos.write(b);
+	            fos.close();
+	            
+	            version_map.put(orig_path, server.getVersion(orig_path));
+			} catch (Exception e) {
+				System.err.println("Error in getFileFromServer");
+				e.printStackTrace();
+			}
+			return 0;
+		}
+		
+		
+		/**
 		 * open returns fd on success, or errors on failure
 		 * if the file is a directory, we add the entry in file_map
 		 * if the file is a file, we add the entry in raf_map
 		 */
-		public int open(String path, OpenOption o ) {
+		public int open(String orig_path, OpenOption o) {
+			// Below is for checkpoint 2
+			String localpath = proxypath + orig_path;// append the file name to cache
+			// System.out.println(localpath);
+			String newfilepath = "";
+			File localfile = null;
+			try {
+				localfile = new File(localpath);
+				// if the file exists at proxy, check if it is the latest version
+				if (localfile.exists()) {
+					int serverversion = server.getVersion(orig_path);
+					int proxyversion = getProxyVersion(orig_path);
+					if (serverversion == -1) {
+						System.err.println("Open::File exists at proxy, but not server. This is weird. ");
+						// create one and upload
+					} else {
+						if (serverversion == proxyversion) {
+							System.err.println("Open::The proxy has a up-to-date version: version " + proxyversion);
+							// copy the file, name it, then return to the user
+							newfilepath = proxypath + orig_path + "copy_" + Integer.toString(getLocalLabel());
+							System.err.println("Open::The new file path at proxy is " + newfilepath);
+							//copyFile(localfile, new File (args[2] + newfilepath));
+						} else {
+							System.err.println("Open::The proxy has a stale version" + proxyversion + ", must fetch " + serverversion + "from server");
+							// fetch from server
+							getFileFromServer(orig_path);
+							version_map.put(orig_path, serverversion);
+						}
+					}
+				} else {// the file doesn't exist
+					int serverversion = server.getVersion(orig_path);
+					if (serverversion == -1) {
+						System.err.println("Open::No such file at server, must create one and upload it");
+					} else {
+						System.err.println("Open::File exists at server, but no local copy, fetching from server...");
+						getFileFromServer(orig_path);
+						version_map.put(orig_path, serverversion);
+						System.err.println("Open::Now we have file of version " + getProxyVersion(orig_path));
+					}
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
 			
-            System.err.println("Proxy::Open. path is " + path);
+			// checkpoint 2 ends here
+            System.err.println("Proxy::Open. path is " + localpath);
             // 1, check corner cases, and create the file on demand
+            
         	File f = null;
         	try {
-        		f = new File(path);
+        		f = new File(localpath);
         		// 1, check if the file already exists. if so, and if option is 
         		// CREATE_NEW, return Error
         		if (o == OpenOption.CREATE_NEW && f.exists()) {
@@ -105,18 +232,16 @@ class Proxy {
         	}
             
         	// 2, check if the fd is already in hashmap
-        	if (fd_map.containsKey(path)) {
+        	if (fd_map.containsKey(orig_path)) {
         		System.err.println("Proxy::open. Already have this file in HashMap");
-        		return fd_map.get(path);
+        		return fd_map.get(orig_path);
         	} 
-    		// 4, enter general process
-        	
-        	/* 
+        	/* 3, enter general process
         	 * if the file is a directory, just put it into file_map
         	 * if not, create a randomaccessfile and put it into raf_map
         	 */
     		if (f.isDirectory()) {
-    			file_map.put(path, f);
+    			file_map.put(orig_path, f);
     		} else {
 				RandomAccessFile raf = null;
 				String option = "rw";
@@ -125,19 +250,19 @@ class Proxy {
 				}
 				System.err.println("Proxy::open. option is " + option);
 				try {
-	    			raf = new RandomAccessFile(path, option);
+	    			raf = new RandomAccessFile(localpath, option);
 	    		} catch (IOException e) {
 	    			System.err.println("Proxy::open. openFile failed...");
 	    			e.printStackTrace();
 	    		}
 	    		// save the file
-				raf_map.put(path, raf);
+				raf_map.put(orig_path, raf);
     		}
     		
-    		int fd = getNewFd(path);
+    		int fd = getNewFd(orig_path);
     		// create file property
     		FileProperty prop = new FileProperty();
-    		prop.filename = path;
+    		prop.filename = orig_path;
     		if (o == OpenOption.READ) {
     			prop.isReadOnly = true;
     		}
@@ -145,9 +270,9 @@ class Proxy {
     			prop.isDirectory = true;
     		}
     		// update hashmaps
-    		fd_map.put(path, fd);
-    		path_map.put(fd, path);
-    		prop_map.put(path, prop);
+    		fd_map.put(orig_path, fd);
+    		path_map.put(fd, orig_path);
+    		prop_map.put(orig_path, prop);
     		
     		System.err.println("Proxy::open. The fd is " + fd);
     		return fd;
@@ -159,26 +284,45 @@ class Proxy {
 		 */
 		public int close( int fd ) {
 			System.err.println("Proxy::close. fd is " + fd);
+
 			if (path_map.containsKey(fd)) {
-				String path = path_map.get(fd);
+				String orig_path = path_map.get(fd);
+				String localpath = proxypath + orig_path;
 				// try to close this file
-				if (prop_map.get(path).isDirectory) {
-					File f = file_map.get(path);
+				if (prop_map.get(orig_path).isDirectory) {
+					File f = file_map.get(orig_path);
 					file_map.remove(f);
 				} else {
-					RandomAccessFile raf = raf_map.get(path);
+					RandomAccessFile raf = raf_map.get(orig_path);
 					try {
 						raf.close();
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
 					raf_map.remove(raf);
+					// update propagate
+					try {
+						if (version_map.get(orig_path) > server.getVersion(orig_path)) { // this is tricky
+						// need to update
+							System.err.println("Close::The file at proxy is modified, need to update in server");
+							File uploadfile = new File(localpath);
+							System.err.println("The file is " + uploadfile + "of version " + version_map.get(orig_path));
+							byte[] uploadb = new byte[(int) uploadfile.length()];
+							FileInputStream fileInputStream = new FileInputStream(uploadfile);
+							fileInputStream.read(uploadb);
+							server.writeToServer(orig_path, uploadb);
+							//server.setVersion(orig_path, version_map.get(orig_path))
+						}
+					} catch (Exception e) {
+						System.err.println("Error in close");
+						e.printStackTrace();
+					}
 				}
 				
 				// update hashmaps
-				fd_map.remove(path);
+				fd_map.remove(orig_path);
 				path_map.remove(fd);
-				prop_map.remove(path);
+				prop_map.remove(orig_path);
 				return 0;
 			} else {
 				System.err.println("Proxy::close. File hasn't been opened yet");
@@ -192,7 +336,7 @@ class Proxy {
 		 */
 		public long write( int fd, byte[] buf) {
 			System.err.println("Proxy::write. fd is " + fd);
-			System.err.println(Arrays.toString(buf));
+			
 			// check fd range
 			if (fd < 3) {
 				System.err.println("Proxy::write. Invalid filedescriptor");
@@ -200,6 +344,7 @@ class Proxy {
 			}
 			
 			if (path_map.containsKey(fd)) {
+				
 				// you cannot write to a readonly file or a directory
 				if (prop_map.get(path_map.get(fd)).isReadOnly) {
 					System.err.println("Proxy::write. Trying to write to a readonly file");
@@ -211,8 +356,17 @@ class Proxy {
 					return Errors.EBADF;
 				}
 				
-				String path = path_map.get(fd);
-				RandomAccessFile raf = raf_map.get(path);
+				// update versionmap
+				String orig_path = path_map.get(fd);
+				String localpath = proxypath + orig_path;
+				if (version_map.containsKey(orig_path)) {
+					version_map.put(orig_path, version_map.get(orig_path) + 1);//checkpoint2
+					System.err.println("Proxy::write. The version has been updated to " + version_map.get(orig_path));
+				} else {
+					version_map.put(orig_path, 1);
+					System.err.println("Proxy::write. The version is 1");
+				}
+				RandomAccessFile raf = raf_map.get(orig_path);
 				// remember the current position
 				long prev_pos = 0;
 				try {
@@ -248,14 +402,15 @@ class Proxy {
 		public long read( int fd, byte[] buf ) {
             System.err.println("Proxy::read. " + "fd is " + fd);
             if (path_map.containsKey(fd)) {
-            	String path = path_map.get(fd);
+            	String orig_path = path_map.get(fd);
+            	String localpath = proxypath + orig_path;
             	// you cannot read a directory
-            	if (prop_map.get(path).isDirectory) {
+            	if (prop_map.get(orig_path).isDirectory) {
             		System.err.println("Proxy:: read. Error! you cannot read a directory");
             		return Errors.EISDIR;
             	}
             	
-				RandomAccessFile raf = raf_map.get(path);
+				RandomAccessFile raf = raf_map.get(orig_path);
 				long readcnt = 0;
 				
 				long prev_pos = 0;
@@ -294,8 +449,8 @@ class Proxy {
 			System.err.println("Proxy:: lseek. fd is " + fd + ", pos is " + pos);
 			RandomAccessFile raf = null;
 			if (path_map.containsKey(fd)) {
-				String path = path_map.get(fd);
-				raf = raf_map.get(path);
+				String orig_path = path_map.get(fd);
+				raf = raf_map.get(orig_path);
 			} else {
 				System.err.println("Proxy:: lseek. file not opened yet");
 				return Errors.EBADF;
@@ -323,11 +478,14 @@ class Proxy {
 		/**
 		 * TODO need to close the file first?
 		 */
-		public int unlink( String path ) {
-			System.err.println("Proxy::Unlink. path is " + path);
+		public int unlink( String orig_path ) {
+			System.err.println("Proxy::Unlink. path is " + orig_path);
+			// Below is for checkpoint 2
+			String localpath = proxypath + orig_path;
+			// checkpoint 2 ends here
 			File f = null;
 			try {
-				f = new File(path);
+				f = new File(localpath);
 
 				if (f.exists()) {
 					f.delete();
@@ -354,6 +512,12 @@ class Proxy {
 	}
 
 	public static void main(String[] args) throws IOException {
+		Proxy.ip = args[0];
+		Proxy.port = Integer.parseInt(args[1]);
+		Proxy.proxypath = args[2];
+		Proxy.proxycachesize = Integer.parseInt(args[3]);
+		//HashMap<String, Integer> version_map = new HashMap<String, Integer>();
+		
 		(new RPCreceiver(new FileHandlingFactory())).run();
 	}
 }

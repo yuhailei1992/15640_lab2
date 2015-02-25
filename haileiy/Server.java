@@ -4,12 +4,16 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.Remote;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.Arrays;
 import java.util.HashMap;
-import java.io.Serializable;
 import java.io.*;
+import java.util.*;
 //You should investigate when to use UnicastRemoteObject vs Serializable. This is really important!
 public class Server extends UnicastRemoteObject implements IServer, Serializable {
 
+	public static String serverpath;
+	public static int serverport;
+	
 	public Server() throws RemoteException {
 		versionMap = new HashMap<String, Integer>();
 	}
@@ -18,11 +22,12 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 		return "Hello :)";
 	}
 	
-	public int getVersion(String path) throws RemoteException {
+	public int getVersion(String orig_path) throws RemoteException {
+		System.err.println("Server::getVersion");
 		int ver = 0;
 		try {
-			if (versionMap.containsKey(path)) {
-				ver = versionMap.get(path);
+			if (versionMap.containsKey(orig_path)) {
+				ver = versionMap.get(orig_path);
 			} else {
 				ver = -1;
 			}
@@ -32,11 +37,12 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 		return ver;
 	}
 
-	public File getFile(String path) throws RemoteException {
+	public File getFile(String orig_path) throws RemoteException {
+		System.err.println("Server::getFile");
 		// return the file
 		try {
-			String newpath = "../servercache/" + path;
-			File file = new File(newpath);
+			String localpath = serverpath + orig_path;
+			File file = new File(localpath);
 			return file;
 		} catch (Exception e) {
 			System.out.println("Error in getFile");
@@ -44,19 +50,39 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 		}
 	}
 	
-	public void writeToServer (String path, byte[] b) throws RemoteException {
+	/**
+	 * this function will write a byte array to a file within the server's cache directory
+	 */
+	public void writeToServer (String orig_path, byte[] b) throws RemoteException {
+		System.err.println("Server::writeToServer");
+		
 		// update versionmap first
-		if (versionMap.containsKey(path)) {
-			versionMap.put(path, versionMap.get(path) + 1);
+		
+		if (versionMap.containsKey(orig_path)) {
+			versionMap.put(orig_path, versionMap.get(orig_path) + 1);
+			System.err.println("The new version num is " + versionMap.get(orig_path));
 		} else {
-			versionMap.put(path, 1);
+			versionMap.put(orig_path, 1);
 		}
 		
+		// if the file already exists, remove it and write
+		
 		// then, write the byte array to file
-		String newpath = "../servercache/" + path;
-		File file = new File(newpath);
+		String localpath = serverpath + orig_path;
+		File file = new File(localpath);
+		
+		// check if the file already exists
+		if (file.exists()) {
+			System.err.println("Server::the file already exists, need to delete it first, then write");
+			System.err.println("The file is " + localpath + "of version " + versionMap.get(orig_path));
+			if(file.delete()){
+    			System.err.println("Server::" + file.getName() + " is deleted!");
+    		}else{
+    			System.err.println("Server:: Delete operation is failed.");
+    		}
+		}
 		try {
-			FileOutputStream fos = new FileOutputStream(newpath);
+			FileOutputStream fos = new FileOutputStream(localpath);
             fos.write(b);
             fos.close();
 		} catch (Exception e) {
@@ -64,10 +90,14 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 		}
 	}
 	
-	public byte[] getFileContent(String path) throws RemoteException {
-		String newpath = "../servercache/" + path;
+	/**
+	 * this function will get the content of a file provided its path
+	 */
+	public byte[] getFileContent(String orig_path) throws RemoteException {
+		System.err.println("Server::getFileContent");
+		String localpath = serverpath + orig_path;
 		
-		File file = new File(newpath);
+		File file = new File(localpath);
 
         byte[] b = new byte[(int) file.length()];
         try {
@@ -88,12 +118,13 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 	public static HashMap<String, Integer> versionMap;
 	
 	public static void main(String [] args) {
-
-		int port = 12345; //you should get port from args
+		System.err.println("Cache server has started");
+		serverport = Integer.parseInt(args[0]);
+		serverpath = args[1];
 
 		try {
 			//create the RMI registry if it doesn't exist.
-			LocateRegistry.createRegistry(port);
+			LocateRegistry.createRegistry(serverport);
 		}
 		catch(RemoteException e) {
 			System.err.println("Failed to create the RMI registry " + e);
@@ -102,14 +133,20 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 		Server server = null;
 		try{
 			server = new Server(); 
+			final File folder = new File(serverpath);
+		    for (final File fileEntry : folder.listFiles()) {
+		    	System.out.println(fileEntry.getName());
+		    	versionMap.put(fileEntry.getName(), 0);// initialize the version to 0
+		    }
 		}
 		catch(RemoteException e) {
 			//You should handle errors properly.
 			System.err.println("Failed to create server " + e);
 			System.exit(1);
 		}
+		
 		try {
-			Naming.rebind(String.format("//127.0.0.1:%d/ServerService", port), server);
+			Naming.rebind(String.format("//127.0.0.1:%d/ServerService", serverport), server);
 		} catch (RemoteException e) {
 			System.err.println(e); //you probably want to do some decent logging here
  		} catch (MalformedURLException e) {
