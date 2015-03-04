@@ -20,16 +20,18 @@ import java.rmi.Naming;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
+import java.nio.file.Files;
 
 class Proxy {
     /* version_map keeps <orig_path, version> pairs */
     static HashMap<String, Integer> version_map;
-
+    
     /* static variables acquired from command line */
     public static String ip;
     public static int port;
     public static String proxyrootdir;
-    public static int proxycachesize;
+    public static long proxycachesize;
+    public static LRUCache cache;
 
     /* inner class. records if the file is readonly or is a directory */
     public static class FileProperty {
@@ -72,7 +74,7 @@ class Proxy {
         // locallabel is used for creating local copies of files that are opened by two
         // or more clients
         int locallabel;
-
+        
         // constructor
         public FileHandler() {
             // initialize the hashmaps
@@ -82,7 +84,7 @@ class Proxy {
             prop_map = new HashMap<String, FileProperty>();
             file_map = new HashMap<String, File>();
             copy_map = new HashMap<String, String>();
-
+            cache = new LRUCache(proxycachesize);
             try {
                 server = getServerInstance(ip, port);
             }
@@ -102,6 +104,11 @@ class Proxy {
             }
         }
 
+        public synchronized void copyFileUsingJava7Files(File source, File dest)
+        		throws IOException {
+        	Files.copy(source.toPath(), dest.toPath());
+        }
+        
         /**
          * return the latest local label, and increment it
          */
@@ -136,8 +143,9 @@ class Proxy {
 
                 fos.write(b);
                 fos.close();
-
+                
                 Proxy.version_map.put(orig_path, server.getVersion(orig_path));
+                cache.set(proxy_path, b.length);//TODO
             } catch (Exception e) {
                 System.err.println("Error in getFileFromServer");
                 e.printStackTrace();
@@ -162,8 +170,9 @@ class Proxy {
          * if the file is a file, we add the entry in raf_map
          */
         public int open(String orig_path, OpenOption o) {
-            // Below is for checkpoint 2
-            // check if there is subdirectory
+        	/******************************************************************
+        	 * stage 1: check pathname, create subdirectories on demand
+        	 *****************************************************************/
             if (orig_path.contains("/")) {
             	// find the last position of '/'
             	int pos = 0;
@@ -176,7 +185,9 @@ class Proxy {
             	System.err.println(subdirpath);
             	createFolder(subdirpath);
             }
-
+            /******************************************************************
+        	 * stage 2: get the latest version from server
+        	 *****************************************************************/
             String proxy_path = proxyrootdir + orig_path;// append the file name to cache
             String newfilepath = "";
             File localfile = null;
@@ -192,10 +203,6 @@ class Proxy {
                     } else {
                         if (server_version == proxy_version) {
                             System.err.println("Open::The proxy has a up-to-date version: version " + proxy_version);
-                            // copy the file, name it, then return to the user
-                            newfilepath = proxyrootdir + orig_path + "copy_" + Integer.toString(getLocalLabel());
-                            System.err.println("Open::The new file path at proxy is " + newfilepath);
-                            // copyFile(localfile, new File (args[2] + newfilepath));
                         } else {
                             System.err.println("Open::The proxy has a stale version" + proxy_version + ", must fetch " + server_version + "from server");
                             // fetch from server
@@ -217,7 +224,30 @@ class Proxy {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-
+            /******************************************************************
+        	 * stage 3: create private copies
+        	 *****************************************************************/
+            // create private copies
+            if (o == OpenOption.READ) {
+            	// no need to create new file
+            	
+            } else {
+            	try {
+            	// need to create new file
+	            	File source = new File(proxy_path);
+	            	String destpath = proxy_path + "copy_" + Integer.toString(getLocalLabel());
+	            	File dest = new File(destpath);
+	            	copyFileUsingJava7Files(source, dest);
+	            	cache.set(destpath, dest.length());
+	            	System.err.println("created copy at proxy, name is " + destpath);
+            	} catch (Exception e) {
+            		e.printStackTrace();
+            	}
+            }
+            
+            /******************************************************************
+        	 * stage 4: general process
+        	 *****************************************************************/
             System.err.println("Proxy::Open. path is " + proxy_path);
             // 1, check corner cases, and create the file on demand
 
@@ -534,7 +564,7 @@ class Proxy {
         if (Proxy.proxyrootdir.charAt(Proxy.proxyrootdir.length()-1) != '/') {
             Proxy.proxyrootdir += '/';
         }
-        Proxy.proxycachesize = Integer.parseInt(args[3]);
+        Proxy.proxycachesize = Long.parseLong(args[3]);
         // initialize the versionmap at proxy
         Proxy.version_map = new HashMap<String, Integer>();
         (new RPCreceiver(new FileHandlingFactory())).run();

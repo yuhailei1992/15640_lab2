@@ -17,11 +17,18 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
     public Server() throws RemoteException {
         versionMap = new HashMap<String, Integer>();
     }
-
-    public String sayHello() throws RemoteException {
-        return "Hello :)";
+    
+    public long getFileSize(String orig_path) throws RemoteException {
+    	long size = 0;
+    	try {
+    		File f = new File(orig_path);
+    		size = f.length();
+    	} catch (Exception e) {
+    		e.printStackTrace();
+    	}
+    	return size;
     }
-
+ 
     public int getVersion(String orig_path) throws RemoteException {
         System.err.println("Server::getVersion");
         int ver = 0;
@@ -161,10 +168,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
             server = new Server();
             final File folder = new File(serverpath);
             listFilesForFolder(folder, "");
-            /*for (final File fileEntry : folder.listFiles()) {
-                System.err.println(fileEntry.getName());
-                versionMap.put(fileEntry.getName(), 0);// initialize the version to 0
-            }*/
+
         }
         catch(RemoteException e) {
             System.err.println("Failed to create server " + e);
