@@ -57,7 +57,6 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         System.err.println("Server::writeToServer");
 
         // update versionmap first
-
         if (versionMap.containsKey(orig_path)) {
             versionMap.put(orig_path, versionMap.get(orig_path) + 1);
             System.err.println("The new version num is " + versionMap.get(orig_path));
@@ -143,7 +142,6 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
             }
         }
         catch(RemoteException e) {
-            //You should handle errors properly.
             System.err.println("Failed to create server " + e);
             System.exit(1);
         }

@@ -13,7 +13,6 @@
  * 
  *****************************************************************************/
 
-
 import java.io.*;
 import java.util.*;
 import java.net.MalformedURLException;
@@ -114,7 +113,7 @@ class Proxy {
         /**
          * get the version of local file
          */
-        public synchronized int getproxy_version(String path) {
+        public synchronized int getProxyVersion(String path) {
             if (Proxy.version_map.containsKey(path)) {
                 return Proxy.version_map.get(path);
             } else {
@@ -162,7 +161,7 @@ class Proxy {
                 // if the file exists at proxy, check if it is the latest version
                 if (localfile.exists()) {
                     int server_version = server.getVersion(orig_path);
-                    int proxy_version = getproxy_version(orig_path);
+                    int proxy_version = getProxyVersion(orig_path);
                     if (server_version == -1) {
                         System.err.println("Open::File exists at proxy, but not server. This is weird. ");
                         // create one and upload
@@ -188,22 +187,20 @@ class Proxy {
                         System.err.println("Open::File exists at server, but no local copy, fetching from server...");
                         getFileFromServer(orig_path);
                         Proxy.version_map.put(orig_path, server_version);
-                        System.err.println("Open::Now we have file of version " + getproxy_version(orig_path));
+                        System.err.println("Open::Now we have file of version " + getProxyVersion(orig_path));
                     }
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
 
-            // checkpoint 2 ends here
             System.err.println("Proxy::Open. path is " + proxy_path);
             // 1, check corner cases, and create the file on demand
 
             File f = null;
             try {
                 f = new File(proxy_path);
-                // 1, check if the file already exists. if so, and if option is
-                // CREATE_NEW, return Error
+                // 1, check if the file already exists. if so, and if option is CREATE_NEW, return Error
                 if (o == OpenOption.CREATE_NEW && f.exists()) {
                     System.err.println("Proxy::open. CREATE_NEW + file already exists");
                     return Errors.EEXIST;
@@ -295,24 +292,25 @@ class Proxy {
                     }
                     raf_map.remove(raf);
                     // update propagate
+
                     try {
-                        if (Proxy.version_map.get(orig_path) > server.getVersion(orig_path)) { // this is tricky
+                        int server_version = server.getVersion(orig_path);
+                        int proxy_version = Proxy.version_map.get(orig_path);
+                        if (proxy_version > server_version) { // this is tricky
                             // need to update
                             System.err.println("Close::The file at proxy is modified, need to update in server");
                             File uploadfile = new File(proxy_path);
-                            System.err.println("The file is " + uploadfile + "of version " + Proxy.version_map.get(orig_path));
+                            System.err.println("The file is " + uploadfile + "of version " + proxy_version);
                             byte[] uploadb = new byte[(int) uploadfile.length()];
                             FileInputStream fileInputStream = new FileInputStream(uploadfile);
                             fileInputStream.read(uploadb);
                             server.writeToServer(orig_path, uploadb);
-                            //server.setVersion(orig_path, version_map.get(orig_path))
                         }
                     } catch (Exception e) {
                         System.err.println("Error in close");
                         e.printStackTrace();
                     }
                 }
-
                 // update hashmaps
                 fd_map.remove(orig_path);
                 path_map.remove(fd);
@@ -437,7 +435,7 @@ class Proxy {
         }
 
         /**
-         *
+         * move the pointer to desired position
          */
         public long lseek( int fd, long pos, LseekOption o ) {
             System.err.println("Proxy:: lseek. fd is " + fd + ", pos is " + pos);
@@ -466,7 +464,6 @@ class Proxy {
             }
             System.err.println("Proxy::lseek. new pos is " + newpos);
             return newpos;
-
         }
 
         /**
@@ -474,13 +471,10 @@ class Proxy {
          */
         public int unlink( String orig_path ) {
             System.err.println("Proxy::Unlink. path is " + orig_path);
-            // Below is for checkpoint 2
             String proxy_path = proxyrootdir + orig_path;
-            // checkpoint 2 ends here
             File f = null;
             try {
                 f = new File(proxy_path);
-
                 if (f.exists()) {
                     f.delete();
                     return 0;
@@ -505,6 +499,9 @@ class Proxy {
         }
     }
 
+    /**
+     * args: ip, port, proxycachedirectory, proxycachesize
+     */
     public static void main(String[] args) throws IOException {
         // set static variables 
         Proxy.ip = args[0];
