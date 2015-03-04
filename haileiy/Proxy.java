@@ -145,6 +145,16 @@ class Proxy {
             return 0;
         }
 
+        public static void createFolder (String folderpath) {
+            File file = new File(proxyrootdir + folderpath);
+            if (!file.exists()) {
+                if (file.mkdir()) {
+                    System.out.println("Directory is created!");
+                } else {
+                    System.out.println("Failed to create directory!");
+                }
+            }
+        }
 
         /**
          * open returns fd on success, or errors on failure
@@ -153,6 +163,20 @@ class Proxy {
          */
         public int open(String orig_path, OpenOption o) {
             // Below is for checkpoint 2
+            // check if there is subdirectory
+            if (orig_path.contains("/")) {
+            	// find the last position of '/'
+            	int pos = 0;
+            	for (int i = 0; i < orig_path.length(); i++) {
+            		if (orig_path.charAt(i) == '/') {
+            			pos = i;
+            		}
+            	}
+            	String subdirpath = orig_path.substring(0, pos);
+            	System.err.println(subdirpath);
+            	createFolder(subdirpath);
+            }
+
             String proxy_path = proxyrootdir + orig_path;// append the file name to cache
             String newfilepath = "";
             File localfile = null;

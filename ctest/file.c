@@ -8,7 +8,7 @@ char *msg = "hello darkness my old friend, i came here to talk with u";
 
 int main()
 {
-    int filedesc = open("file.txt", O_CREAT | O_RDWR, 244);
+    int filedesc = open("upload.txt", O_CREAT | O_RDWR, 244);
 
     // write to file
     write(filedesc, msg, strlen(msg));

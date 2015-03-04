@@ -116,6 +116,30 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 
     public static HashMap<String, Integer> versionMap;
 
+    public static void listFilesForFolder (final File folder, String superfolder) {
+        for (final File fileEntry : folder.listFiles()) {
+            if (fileEntry.isDirectory()) {
+                String folderpath = "";
+                if (superfolder.length() > 0) {
+                    folderpath = superfolder + "/" + fileEntry.getName();
+                } else {
+                    folderpath = fileEntry.getName();
+                }
+                listFilesForFolder(fileEntry, folderpath);
+            } else {
+                String filename = "";
+                if (superfolder.length() > 0) {
+                    filename = superfolder + "/" + fileEntry.getName();
+                } else {
+                    filename = fileEntry.getName();
+                    
+                }
+                System.err.println(filename);
+                versionMap.put(filename, 0);
+            }
+        }
+    }
+
     public static void main(String [] args) {
         System.err.println("Cache server has started");
         serverport = Integer.parseInt(args[0]);
@@ -136,10 +160,11 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         try {
             server = new Server();
             final File folder = new File(serverpath);
-            for (final File fileEntry : folder.listFiles()) {
+            listFilesForFolder(folder, "");
+            /*for (final File fileEntry : folder.listFiles()) {
                 System.err.println(fileEntry.getName());
                 versionMap.put(fileEntry.getName(), 0);// initialize the version to 0
-            }
+            }*/
         }
         catch(RemoteException e) {
             System.err.println("Failed to create server " + e);
