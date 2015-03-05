@@ -62,7 +62,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
      */
     public void writeToServer (String orig_path, byte[] b) throws RemoteException {
         System.err.println("Server::writeToServer");
-
+        //System.err.println(Arrays.toString(b));
         // update versionmap first
         if (versionMap.containsKey(orig_path)) {
             versionMap.put(orig_path, versionMap.get(orig_path) + 1);
@@ -87,6 +87,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
                 System.err.println("Delete operation failed.");
             }
         }
+        // write to the file
         try {
             FileOutputStream fos = new FileOutputStream(localpath);
             fos.write(b);

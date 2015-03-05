@@ -1,1 +1,1 @@
-tar cvzf ../haileiy.tgz Makefile Proxy.java Server.java IServer.java
+tar cvzf ../haileiy.tgz Makefile *.java
