@@ -7,7 +7,6 @@ import java.io.File;
 import java.util.*;
 
 public class LRUCache {
-
 	
     private int currsize; // current cache size
     private long capacity; // maximum size
@@ -42,60 +41,50 @@ public class LRUCache {
             return null;
         }
     }
+    
+    public void setUsed(String path) {
+    	Entry node = hm.get(path);
+    	if (node != null) {
+    		node.isInUse = false;
+    	}
+    }
 
-    public void set(String path, long filesize) {
+    /** return true on success
+     * return false if there is no space in the cache
+     */
+    public boolean insert(String path, long filesize) {
     	System.err.println("Cache: insert " + path + " with size of " + filesize);
-        if (this.currsize == 0) { // initial insert
-            // create a new node
-            Entry node = new Entry();
-            node.path = path;
-            node.size = filesize;
-            // place this node to head of cache
-            head.next = node;
-            node.prev = head;
-            node.next = tail;
-            tail.prev = node;
-            this.currsize += filesize;
-            // update the hashmap
-            hm.put(path, node);
-        } else {
-            //check if the path already exist
-            Entry node = hm.get(path);
-            if (node == null) {
-                // create a new node
-                node = new Entry();
-                node.path = path;
-                node.size = filesize;
-                // update the cache
-                set_new_head(node);
-                this.currsize += filesize;
-                while (this.currsize > this.capacity)
-                {
-                	System.err.println("Cache:need to evict something");
-                    Entry evicted = hm.remove(tail.prev.path);
-                    this.currsize -= evicted.size;
-                    try {
-                    	File f = new File(evicted.path);
-                    	f.delete();
-                    } catch (Exception e) {
-                    	e.printStackTrace();
-                    }
-                }
-                // update the hashmap
-                hm.put(path, node);
-            }
-            /*
-            else if  (node.path == path && node.size != size)// duplicate
-            {
-                node.size = size;
-                hm.put(node.path, node);
-                move_to_head(node);
-            }
-            */
-            else {// already exist. size doesn't change
-                move_to_head(node);
-            }
-        }
+    	if (this.currsize + filesize > this.capacity) {
+    		System.err.println("Cache: full.need to evict something");
+    		while (this.currsize + filesize > this.capacity) {
+    			Entry p = tail.prev;
+    			for (; p != head; p = p.prev) {
+    				if (p.isInUse == false) break;
+    			}
+    			if (p == head) {
+    				System.err.println("Cache: cannot evict anything");
+    				return false;
+    			} else {
+    				this.currsize -= p.size;
+    				remove_node(p);
+    				hm.remove(p.path);
+    			}
+    		}
+    	}
+    	System.err.println("Cache:: now we have enough space");
+    	this.currsize += filesize;
+    	// create new node
+    	Entry node = new Entry();
+    	node.path = path;
+    	node.size = filesize;
+    	node.isInUse = true;
+    	// insert the node to the head
+    	node.next = head.next;
+    	head.next = node;
+    	node.next.prev = node;
+    	node.prev = head;
+    	hm.put(path, node);
+    	return true;
     }
     /* return the filesize of tail node */
     public Entry remove_tail () {
@@ -109,6 +98,17 @@ public class LRUCache {
         }
     }
 
+    public boolean remove_node (Entry node) {
+    	if (node == tail || node == head) {
+    		System.err.println("Cannot remove head or tail!!!!!!!");
+    		return false;
+    	} else {
+    		node.prev.next = node.next;
+    		node.prev.next.prev = node.prev;
+    		return true;
+    	}
+    }
+    
     public void set_new_head(Entry node) {
         node.next = head.next;
         node.next.prev = node;
@@ -130,7 +130,7 @@ public class LRUCache {
     	Entry node = head.next;
     	System.err.println("Showing cache");
     	while (node != tail) {
-    		System.err.println(node.path + " size is " + node.size);
+    		System.err.println(node.path + " size is " + node.size + "isInUse? = " + node.isInUse);
     		node = node.next;
     	}
     	System.err.println("Show cache ends here");
@@ -154,6 +154,7 @@ public class LRUCache {
 class Entry {
     String path;
     long size;
+    boolean isInUse;
     Entry prev;
     Entry next;
 }
