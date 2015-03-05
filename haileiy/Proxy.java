@@ -21,6 +21,7 @@ import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.nio.file.Files;
+import java.net.URI;
 
 class Proxy {
     /* version_map keeps <orig_path, version> pairs */
@@ -69,7 +70,7 @@ class Proxy {
         HashMap<String, FileProperty> prop_map;
         HashMap<String, File> file_map;
         HashMap<String, String> copy_map;// store the copy relationship between files
-
+        HashMap<String, String> latest_map;
         IServer server;
         // locallabel is used for creating local copies of files that are opened by two
         // or more clients
@@ -85,6 +86,8 @@ class Proxy {
             file_map = new HashMap<String, File>();
             copy_map = new HashMap<String, String>();
             cache = new LRUCache(proxycachesize);
+            latest_map = new HashMap<String, String>();
+            
             try {
                 server = getServerInstance(ip, port);
             }
@@ -128,6 +131,13 @@ class Proxy {
             }
         }
 
+        /** 
+         * in forkFile, we make a copy of this file, update latest_map, update
+         * origin_map, 
+         */
+        public synchronized String forkFile (String path) {
+        	
+        }
         /**
          * this function will get the file from server, then write it to local directory
          * also, it will update the versionmap
@@ -145,6 +155,8 @@ class Proxy {
                 fos.close();
                 
                 Proxy.version_map.put(orig_path, server.getVersion(orig_path));
+                // cache
+                // latest_map.put(orig_path, )
                 cache.set(proxy_path, b.length);//TODO
             } catch (Exception e) {
                 System.err.println("Error in getFileFromServer");
@@ -155,6 +167,7 @@ class Proxy {
 
         public static void createFolder (String folderpath) {
             File file = new File(proxyrootdir + folderpath);
+            System.err.println("Createfolder:: " + proxyrootdir + folderpath);
             if (!file.exists()) {
                 if (file.mkdir()) {
                     System.out.println("Directory is created!");
@@ -165,6 +178,37 @@ class Proxy {
         }
 
         /**
+         * simplify the file's path, eliminate ".."
+         */
+        public String simplifyPath(String path) {
+            if (path == null) return "/";
+            String[] tokens = path.split("/");
+            java.util.LinkedList<String> stk = new java.util.LinkedList<String>();
+            for (int i = 0; i < tokens.length; ++i) {
+            	if (tokens[i].length() == 0 || tokens[i].equals(".")) {
+            		continue;
+            	}
+            	else if (tokens[i].equals("..")) {
+            		if (!stk.isEmpty()) {
+            			stk.removeLast();
+            		}
+            	}
+            	else {
+            		stk.add(tokens[i]);
+            	}
+            }
+            if (stk.isEmpty()) {
+            	return "/";
+            }
+            StringBuilder s = new StringBuilder();
+            while (!stk.isEmpty()) {
+            	s.append("/");
+            	s.append(stk.remove());
+            }
+            return s.toString().substring(1, s.toString().length());
+        }
+        
+        /**
          * open returns fd on success, or errors on failure
          * if the file is a directory, we add the entry in file_map
          * if the file is a file, we add the entry in raf_map
@@ -173,6 +217,8 @@ class Proxy {
         	/******************************************************************
         	 * stage 1: check pathname, create subdirectories on demand
         	 *****************************************************************/
+        	orig_path = simplifyPath(orig_path);
+        	System.err.println("simplified orig_path is " + orig_path);
             if (orig_path.contains("/")) {
             	// find the last position of '/'
             	int pos = 0;
@@ -182,7 +228,7 @@ class Proxy {
             		}
             	}
             	String subdirpath = orig_path.substring(0, pos);
-            	System.err.println(subdirpath);
+            	// creat the folder specified in the path
             	createFolder(subdirpath);
             }
             /******************************************************************
