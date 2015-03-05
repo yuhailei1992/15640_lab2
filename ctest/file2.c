@@ -4,11 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-char *msg = "hello darkness my old friend, i came here to talk with u";
+char *msg = "adfaldksfajhello darkness my old friend, i came here to talk with u";
 
 int main()
 {
-    int filedesc = open("test.txt", O_RDWR);
+    int filedesc = open("upload.txt", O_RDWR);
 
     // write to file
     write(filedesc, msg, strlen(msg));

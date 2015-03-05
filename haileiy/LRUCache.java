@@ -54,12 +54,17 @@ public class LRUCache {
      */
     public boolean insert(String path, long filesize) {
     	System.err.println("Cache: insert " + path + " with size of " + filesize);
+    	
     	if (this.currsize + filesize > this.capacity) {
     		System.err.println("Cache: full.need to evict something");
     		while (this.currsize + filesize > this.capacity) {
     			Entry p = tail.prev;
     			for (; p != head; p = p.prev) {
-    				if (p.isInUse == false) break;
+    				if (Proxy.isInUse(p.path)) {
+    					System.err.println("Cache::Cannot evict file " + p.path);
+    				} else {
+    					break;
+    				}
     			}
     			if (p == head) {
     				System.err.println("Cache: cannot evict anything");
@@ -68,6 +73,7 @@ public class LRUCache {
     				this.currsize -= p.size;
     				remove_node(p);
     				hm.remove(p.path);
+    				Proxy.removeFile(p.path);
     			}
     		}
     	}
@@ -84,6 +90,7 @@ public class LRUCache {
     	node.next.prev = node;
     	node.prev = head;
     	hm.put(path, node);
+    	showCache();
     	return true;
     }
     /* return the filesize of tail node */
@@ -130,7 +137,7 @@ public class LRUCache {
     	Entry node = head.next;
     	System.err.println("Showing cache");
     	while (node != tail) {
-    		System.err.println(node.path + " size is " + node.size + "isInUse? = " + node.isInUse);
+    		System.err.println(node.path + " size is " + node.size + " isInUse? = " + node.isInUse);
     		node = node.next;
     	}
     	System.err.println("Show cache ends here");
