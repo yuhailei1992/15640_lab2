@@ -126,7 +126,7 @@ public class LRUCache {
     	int i = 0;
     	long totalsize = 0;
     	while (node != tail) {
-    		System.err.print("#" + i + node.path + "\t");
+    		System.err.print("#" + i + node.path + "reference # " + Proxy.open_map.get(node.path) + "\t");
     		totalsize += node.size;
     		node = node.next;
     		i++;

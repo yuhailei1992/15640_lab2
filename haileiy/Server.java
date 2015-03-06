@@ -36,7 +36,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
     /**
      * 
      */
-    public synchronized int removeFile(String orig_path) throws RemoteException {
+    public synchronized int removeServerFile(String orig_path) throws RemoteException {
     	System.err.println("Server::unlink");
     	// 1, update version map
     	if (versionMap.containsKey(orig_path)) {
@@ -59,8 +59,11 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
     	return -1;
     }
     
+    /**
+     * get version number of a file.
+     * -1 represents non-existency
+     */
     public int getVersion(String orig_path) throws RemoteException {
-        System.err.println("Server::getVersion");
         int ver = 0;
         try {
             if (versionMap.containsKey(orig_path)) {
@@ -71,20 +74,8 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         } catch (Exception e) {
             System.err.println("Error in getVersion");
         }
+        System.err.println("Server::getVersion for file " + orig_path + " is " + ver);
         return ver;
-    }
-
-    public File getFile(String orig_path) throws RemoteException {
-        System.err.println("Server::getFile");
-        // return the file object
-        try {
-            String localpath = serverrootdir + orig_path;
-            File file = new File(localpath);
-            return file;
-        } catch (Exception e) {
-            System.err.println("Error in getFile");
-            return null;
-        }
     }
 
     /**

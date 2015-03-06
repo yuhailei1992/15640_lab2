@@ -39,12 +39,10 @@ class Proxy {
      */
     public static boolean removeFile(String proxy_path) {
     	System.err.println("RemoveFile " + proxy_path);
-    	if (!Proxy.open_map.containsKey(proxy_path)) {
-    		System.err.println("RemoveFile: this file is not in openmap");
-    		return false;
-    	}
-    	if (Proxy.open_map.get(proxy_path) > 0) {// the file is in use
-    		System.err.println("TRYING TO DELETE A FILE IN USE");
+
+    	// check if the file exists or if is in use
+    	if (!Proxy.open_map.containsKey(proxy_path) || Proxy.open_map.get(proxy_path) > 0) {
+    		System.err.println("Error in RemoveFile: the file is not opened or is in use");
     	} else {
     		try {
     			open_map.remove(proxy_path);
@@ -53,7 +51,7 @@ class Proxy {
     			f.delete();
     			return true;
     		} catch (Exception e) {
-    			System.err.println("RemoveFile::failed to remove the file");
+    			e.printStackTrace();
     		}
     	}
     	return false;
@@ -759,7 +757,7 @@ class Proxy {
         public synchronized int unlink( String orig_path ) {
             System.err.println("Proxy::Unlink. path is " + orig_path);
             try {
-				if (Proxy.server.removeFile(orig_path) == -1) {//fail
+				if (Proxy.server.removeServerFile(orig_path) == -1) {//fail
 					return Errors.ENOENT;
 				} else {
 					return 0;
