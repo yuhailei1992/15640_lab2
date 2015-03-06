@@ -4,17 +4,12 @@
  *****************************************************************************/
 
 import java.io.*;
-import java.util.*;
 import java.net.MalformedURLException;
 import java.rmi.Naming;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
-import java.rmi.registry.LocateRegistry;
 import java.nio.file.Files;
-import java.nio.file.OpenOption;
-import java.net.URI;
 import java.sql.Timestamp;
-import java.util.Date;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -37,7 +32,6 @@ class Proxy {
     public static ConcurrentHashMap<String, String> latest_map;
     public static ConcurrentHashMap<String, String> origin_map;
     
-    
     /**
      * remove file give the filename
      * @param proxy_path
@@ -45,10 +39,16 @@ class Proxy {
      */
     public static boolean removeFile(String proxy_path) {
     	System.err.println("RemoveFile " + proxy_path);
-    	if (Proxy.open_map.get(proxy_path) != 0) {// the file is in use
+    	if (!Proxy.open_map.containsKey(proxy_path)) {
+    		System.err.println("RemoveFile: this file is not in openmap");
+    		return false;
+    	}
+    	if (Proxy.open_map.get(proxy_path) > 0) {// the file is in use
     		System.err.println("TRYING TO DELETE A FILE IN USE");
     	} else {
     		try {
+    			open_map.remove(proxy_path);
+    			Proxy.cache.removeNode(proxy_path);
     			File f = new File(proxy_path);
     			f.delete();
     			return true;
@@ -57,6 +57,16 @@ class Proxy {
     		}
     	}
     	return false;
+    }
+    
+    public static boolean removeFromCache(String proxy_path) {
+    	if (proxy_path == null) {
+    		System.err.println("removeFromCache: null string");
+    		return false;
+    	} else {
+    		cache.removeNode(proxy_path);
+    		return true;
+    	}
     }
     
     /**
@@ -190,11 +200,14 @@ class Proxy {
         		e.printStackTrace();
         	}
         	// check cache
-        	if (Proxy.cache.insert(new_file_path, size)) {
+        	int rv = Proxy.cache.insert(new_file_path, size);
+        	if (rv == 0) {
             	System.err.println("forkFile: Enough space. Just insert");
-            } else {
+            } else if (rv == -1) {
             	System.err.println("forkFile: No enough space");
             	return null;
+            } else if (rv == -2) {//duplicate
+            	// do nothing
             }
         	// copy file
         	try {
@@ -214,14 +227,14 @@ class Proxy {
          * also, it will update the versionmap
          */
         public synchronized int getFileFromServer(String orig_path) {
-            System.err.println("Proxy::getFileFromServer");
             try {
                 // get the complete path at the proxy
                 String proxy_path = proxyrootdir + orig_path;
                 long filesize = Proxy.server.getFileSize(orig_path);
-                if (Proxy.cache.insert(proxy_path, (int)filesize)) {
+                int rv = Proxy.cache.insert(proxy_path, (int)filesize);
+                if (rv == 0) {
                 	System.err.println("Enough space. Just insert");
-                } else {
+                } else if (rv == -1) {
                 	System.err.println("No enough space");
                 	return -1;
                 }
@@ -236,17 +249,11 @@ class Proxy {
             		cnt += b.length;
             	}
             	raf.close();
-            	/*
-                FileOutputStream fos = new FileOutputStream(proxy_path);
-                fos.write(b);
-                fos.close();
-                */
                 Proxy.version_map.put(orig_path, server.getVersion(orig_path));
                 // cache
                 Proxy.latest_map.put(orig_path, proxy_path);
                 Proxy.origin_map.put(proxy_path, orig_path);
                 Proxy.open_map.put(proxy_path, 0);
-                
                 
             } catch (Exception e) {
                 System.err.println("Error in getFileFromServer");
@@ -259,15 +266,14 @@ class Proxy {
          * get a copy from server
          */
         public synchronized String getFileFromServer2(String orig_path) {
-        	System.err.println("Proxy::getFileFromServer2");
         	String local_path = getLocalPath(proxyrootdir + orig_path);
         	try {
         		// chunk
                 long filesize = Proxy.server.getFileSize(orig_path);
-                
-                if (Proxy.cache.insert(local_path, (int)filesize)) {
+                int rv = Proxy.cache.insert(local_path, (int)filesize);
+                if (rv == 0) {
                 	System.err.println("getFileFromServer2:Enough space. Just insert");
-                } else {
+                } else if (rv == -1) {
                 	System.err.println("getFileFromServer2:No enough space");
                 	return null;
                 }
@@ -284,12 +290,6 @@ class Proxy {
             	}
             	raf.close();
 
-                // write the byte array to the file
-            	/*
-                FileOutputStream fos = new FileOutputStream(local_path);
-                fos.write(b);
-                fos.close();
-                */
                 Proxy.version_map.put(orig_path, server.getVersion(orig_path));
                 // update hashmaps
                 System.err.println("getFileFromServer2:: origin and new path are " + orig_path + " and " + local_path);
@@ -297,7 +297,6 @@ class Proxy {
                 Proxy.origin_map.put(local_path, orig_path);
                 Proxy.open_map.put(local_path, 0);
             } catch (Exception e) {
-                System.err.println("Error in getFileFromServer");
                 e.printStackTrace();
             }
         	return local_path;
@@ -308,7 +307,7 @@ class Proxy {
          */
         public synchronized void createFolder (String folderpath) {
             File file = new File(proxyrootdir + folderpath);
-            System.err.println("Createfolder:: " + proxyrootdir + folderpath);
+            // System.err.println("Createfolder:: " + proxyrootdir + folderpath);
             if (!file.exists()) {
                 if (file.mkdir()) {
                     System.out.println("Directory is created!");
@@ -359,7 +358,16 @@ class Proxy {
         	 * stage 1: check pathname, create subdirectories on demand
         	 *****************************************************************/
         	assert this.fd_map.keySet().size() == this.path_map.keySet().size();
+        	Proxy.cache.showCache();
+        	// simplify path
         	orig_path = simplifyPath(orig_path);
+        	
+        	// check if this file already opened. 
+        	if (this.fd_map.containsKey(proxyrootdir + orig_path)) {
+                System.err.println("Proxy::open. Already have this file in HashMap");
+                return this.fd_map.get(proxyrootdir + orig_path);
+            }
+        	
             if (orig_path.contains("/")) {
             	// find the last position of '/'
             	int pos = 0;
@@ -391,6 +399,7 @@ class Proxy {
                     int proxy_version = getProxyVersion(orig_path);
                     if (server_version == -1) {
                         System.err.println("Open:File exists at proxy, but not server. This is weird. ");
+                        return Errors.ENOENT;
                         // create one and upload
                     } else {
                         if (server_version == proxy_version) {
@@ -407,23 +416,16 @@ class Proxy {
                             System.err.println("Open:The proxy has a stale version" + proxy_version + ", must fetch " + server_version + "from server");
                             // try to delete the old copy
                             String stale_master_copy = latest_map.get(orig_path);
-                            File todelete = null;
-                            try {
-                            	todelete = new File(stale_master_copy);
-                            	todelete.delete();
-                            	// remove from LRU
-                            	Proxy.cache.removeNode(stale_master_copy);
-                            	System.err.println("Open:deleted stale master copy");
-                            } catch (Exception e) {
-                            	e.printStackTrace();
-                            }
+                            Proxy.removeFile(stale_master_copy);
+                           // Proxy.removeFile(stale_master_copy);
+                            //Proxy.cache.
+                            
                             // fetch from server
                             proxy_path = getFileFromServer2(orig_path);
                             if (proxy_path == null) {
                             	return Errors.ENOMEM;
                             }
                             Proxy.version_map.put(orig_path, server_version);
-                            Proxy.latest_map.put(orig_path, proxy_path);
                             if (o == OpenOption.READ) {
                             	// then just read on this copy
                             	System.err.println("Open::should read on this file: " + proxy_path);
@@ -576,34 +578,29 @@ class Proxy {
                     }
                     // update propagate
                     FileProperty filep = this.prop_map.get(proxy_path);
-                    if (filep.isReadOnly) {
+                    if (filep.isReadOnly) {//READ
                     	// should delete staled read-only copy
                     	// if the file has no reference, and is stale, delete it!
-                    	if (Proxy.isInUse(orig_path) == false) {
-                    		System.err.println("Proxy:close:the readonly file is stale, should be deleted");
-                    		try {
-	                    		int server_version = server.getVersion(orig_path);
-	                    		int proxy_version = getProxyVersion(orig_path);
-	                    		if (server_version > proxy_version) {
-	                    			File todelete = null;
-                    				todelete = new File(proxy_path);
-                    				todelete.delete();
-	                    		}
-                    		} catch (Exception e) {
-                				e.printStackTrace();
-                			}
-                    	}
-                    } else {
+                    } else {//WRITE
                     	// write: should upload to server
                     	System.err.println("Proxy::Close:: file modified, need to update in server");
-                        File uploadfile = new File(proxy_path);
                         try {
-                        	byte[] uploadb = new byte[(int) uploadfile.length()];
-                            FileInputStream fileInputStream = new FileInputStream(uploadfile);
-                            fileInputStream.read(uploadb);
-                            server.writeToServer(orig_path, uploadb);
-                            fileInputStream.close();
+                        	RandomAccessFile raf_upload = new RandomAccessFile(proxy_path, "r");
+                        	long filesize = raf_upload.length();
+                        	server.writeInChunkPrep(orig_path);
+                        	long cnt = 0;
+                        	while (cnt < filesize) {
+                        		long bytearraysize = Math.min(CHUNKSIZE, filesize - cnt);
+                        		byte[] b = new byte[(int)bytearraysize];
+                        		raf_upload.read(b);
+                        		Proxy.server.writeInChunk(orig_path, cnt, b);
+                        		cnt += bytearraysize;
+                        	}
+                        	raf_upload.close();
                             // the modified version is latest
+                        	String toDel = latest_map.get(orig_path);
+                        	Proxy.removeFile(toDel);
+                        	
                             Proxy.latest_map.put(orig_path, proxy_path);
                             // update version map
                             Proxy.version_map.put(orig_path, server.getVersion(orig_path));
@@ -794,7 +791,7 @@ class Proxy {
         // set static variables 
     	// show memory size
     	System.err.println("System mem is " + Runtime.getRuntime().freeMemory());
-    	Proxy.CHUNKSIZE = 1000;// set to 1M
+    	Proxy.CHUNKSIZE = 1000000;// set to 1M
         Proxy.ip = args[0];
         Proxy.port = Integer.parseInt(args[1]);
         Proxy.proxyrootdir = args[2];
@@ -802,6 +799,7 @@ class Proxy {
             Proxy.proxyrootdir += '/';
         }
         Proxy.proxycachesize = Long.parseLong(args[3]);
+        System.err.println("The args are " + args[0] + " " + args[1] + " " + args[2] + " " + args[3]);
         
         Proxy.cache = new LRUCache(proxycachesize);
         Proxy.lock = new ReentrantLock();

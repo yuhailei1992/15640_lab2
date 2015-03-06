@@ -5,8 +5,13 @@ import java.rmi.registry.LocateRegistry;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.concurrent.ConcurrentHashMap;
 import java.io.*;
+
 //You should investigate when to use UnicastRemoteObject vs Serializable. This is really important!
 public class Server extends UnicastRemoteObject implements IServer, Serializable {
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
 	// static variables
     public static String serverrootdir;
     public static int serverport;
@@ -85,37 +90,45 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
     /**
      * this function will write a byte array to a file within the server's cache directory
      */
-    public synchronized void writeToServer (String orig_path, byte[] b) throws RemoteException {
-        System.err.println("Server::writeToServer");
-        // 1, update versionmap first
-        if (versionMap.containsKey(orig_path)) {
+    
+    public synchronized void writeInChunkPrep(String orig_path) throws RemoteException {
+    	System.err.println("Server::writeToServerPrep");
+    	String server_path = serverrootdir + orig_path;
+    	if (versionMap.containsKey(orig_path)) {
             versionMap.put(orig_path, versionMap.get(orig_path) + 1);
             System.err.println("The new version num is " + versionMap.get(orig_path));
         } else {
             versionMap.put(orig_path, 1);
         }
-
-        // 2, write the byte array to file
-        String localpath = serverrootdir + orig_path;
-        File file = new File(localpath);
-
-        // 2.1, check if the file already exists. if it exists, delete and write
-        if (file.exists()) {
+    	File file = new File(server_path);
+    	if (file.exists()) {
             System.err.println("The file already exists, need to delete it first, then write");
-            System.err.println("The file is " + localpath + "of version " + versionMap.get(orig_path));
+            System.err.println("The file is " + server_path + "of version " + versionMap.get(orig_path));
             if(file.delete()) {
                 System.err.println(file.getName() + " is deleted!");
             } else {
                 System.err.println("Delete operation failed.");
             }
         }
+    }
+    
+    public synchronized void writeToServer (String orig_path, byte[] b) throws RemoteException {
+    	
+    }
+    
+    public void writeInChunk(String orig_path, long start_offset, byte[] b) throws RemoteException {
+    	//System.err.println("Server::writeInChunk");
+
+        // 2, write the byte array to file
+        String server_path = serverrootdir + orig_path;
         // 3, write to the file
         try {
-            FileOutputStream fos = new FileOutputStream(localpath);
-            fos.write(b);
-            fos.close();
+        	RandomAccessFile raf = new RandomAccessFile(server_path, "rw");
+        	raf.seek(start_offset);
+        	raf.write(b);
+        	raf.close();
         } catch (Exception e) {
-            System.err.println("Error while writing to servercache");
+            System.err.println("Error while writing to servercache in chunks");
         }
     }
 
@@ -143,42 +156,9 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         }
         return b;
     }
-    /*
-    public byte[] readInChunk(String path, long start_offset, long chunksize) throws RemoteException {
-    	System.err.println("Server::readInChunk");
-    	// 1, check if the path exists
-    	String server_path = serverrootdir + path;
-    	byte[] b = new byte[(int)chunksize];
-    	RandomAccessFile raf = null;
-    	int size = 0;
-    	try {
-    		if (rafMap.containsKey(server_path)) {//this path is already opened
-        		raf = rafMap.get(server_path);
-        	} else{
-        		raf = new RandomAccessFile(server_path, "r");
-        		rafMap.put(server_path, raf);
-        	}
-        // 2, read a chunk
-            size = raf.read(b);
-            return b;
-    	} catch (Exception e) {
-    		e.printStackTrace();
-    	}
-    	// if the size is smaller than expected
-    	if (size < chunksize) {
-    		System.err.println("Readinchunks has come to the end");
-    		try {
-    			raf.close();
-    			rafMap.remove(server_path);
-    		} catch (Exception e) {
-    			e.printStackTrace();
-    		}
-    	}
-    	return b;
-    }*/
     
     public byte[] readInChunk(String path, long start_offset, long chunksize) throws RemoteException {
-    	System.err.println("Server::readInChunk");
+    	// System.err.println("Server::readInChunk");
     	// 1, check if the path exists
     	String server_path = serverrootdir + path;
     	byte[] b = new byte[(int)chunksize];
@@ -195,10 +175,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
     	}
     	return b;
     }
-    
-    public int writeInChunk(String path, long start_offset, byte[] b) throws RemoteException {
-    	return 0;
-    }
+
     
     /**
      * return 0 on success, -1 on failure
