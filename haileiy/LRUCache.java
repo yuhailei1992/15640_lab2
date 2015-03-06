@@ -137,7 +137,7 @@ public class LRUCache {
     	Entry node = head.next;
     	System.err.println("Showing cache");
     	while (node != tail) {
-    		System.err.println(node.path + " size is " + node.size + " isInUse? = " + node.isInUse);
+    		System.err.println(node.path + " size is " + node.size);
     		node = node.next;
     	}
     	System.err.println("Show cache ends here");

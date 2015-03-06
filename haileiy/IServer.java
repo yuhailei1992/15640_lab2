@@ -8,4 +8,5 @@ public interface IServer extends Remote {
     public File getFile(String path) throws RemoteException;
     public byte[] getFileContent(String path) throws RemoteException;
     public void writeToServer (String path, byte[] b) throws RemoteException;
+    public int removeFile(String orig_path) throws RemoteException;
 }

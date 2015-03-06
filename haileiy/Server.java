@@ -2,20 +2,17 @@ import java.net.MalformedURLException;
 import java.rmi.Naming;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
-import java.rmi.Remote;
 import java.rmi.server.UnicastRemoteObject;
-import java.util.Arrays;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.io.*;
-import java.util.*;
 //You should investigate when to use UnicastRemoteObject vs Serializable. This is really important!
 public class Server extends UnicastRemoteObject implements IServer, Serializable {
-
-    public static String serverpath;
+	// static variables
+    public static String serverrootdir;
     public static int serverport;
-
+    // constructor
     public Server() throws RemoteException {
-        versionMap = new HashMap<String, Integer>();
+        versionMap = new ConcurrentHashMap<String, Integer>();
     }
     
     public long getFileSize(String orig_path) throws RemoteException {
@@ -28,7 +25,32 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
     	}
     	return size;
     }
- 
+    
+    /**
+     * 
+     */
+    public synchronized int removeFile(String orig_path) throws RemoteException {
+    	System.err.println("Server::unlink");
+    	// 1, update version map
+    	if (versionMap.containsKey(orig_path)) {
+    		versionMap.remove(orig_path);
+    	}
+    	// 2, delete the file
+    	String server_path = serverrootdir + orig_path;
+    	File f = null;
+    	try {
+            f = new File(server_path);
+            if (f.exists()) {
+                f.delete();
+                return 0;
+            } else {
+                System.err.println("Proxy::unlink. file doesn't exist at all");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    	return -1;
+    }
     public int getVersion(String orig_path) throws RemoteException {
         System.err.println("Server::getVersion");
         int ver = 0;
@@ -48,7 +70,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         System.err.println("Server::getFile");
         // return the file
         try {
-            String localpath = serverpath + orig_path;
+            String localpath = serverrootdir + orig_path;
             File file = new File(localpath);
             return file;
         } catch (Exception e) {
@@ -60,7 +82,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
     /**
      * this function will write a byte array to a file within the server's cache directory
      */
-    public void writeToServer (String orig_path, byte[] b) throws RemoteException {
+    public synchronized void writeToServer (String orig_path, byte[] b) throws RemoteException {
         System.err.println("Server::writeToServer");
         //System.err.println(Arrays.toString(b));
         // update versionmap first
@@ -74,7 +96,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         // if the file already exists, remove it and write
 
         // then, write the byte array to file
-        String localpath = serverpath + orig_path;
+        String localpath = serverrootdir + orig_path;
         File file = new File(localpath);
 
         // check if the file already exists
@@ -102,7 +124,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
      */
     public byte[] getFileContent(String orig_path) throws RemoteException {
         System.err.println("Server::getFileContent");
-        String localpath = serverpath + orig_path;
+        String localpath = serverrootdir + orig_path;
 
         File file = new File(localpath);
 
@@ -110,7 +132,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         try {
             FileInputStream fileInputStream = new FileInputStream(file);
             fileInputStream.read(b);
-
+            fileInputStream.close();
         } catch (FileNotFoundException e) {
             System.err.println("File Not Found.");
             e.printStackTrace();
@@ -122,8 +144,13 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         return b;
     }
 
-    public static HashMap<String, Integer> versionMap;
+    public static ConcurrentHashMap<String, Integer> versionMap;
 
+    /**
+     * this function is used when server initializes
+     * @param folder
+     * @param superfolder
+     */
     public static void listFilesForFolder (final File folder, String superfolder) {
         for (final File fileEntry : folder.listFiles()) {
             if (fileEntry.isDirectory()) {
@@ -140,7 +167,6 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
                     filename = superfolder + "/" + fileEntry.getName();
                 } else {
                     filename = fileEntry.getName();
-                    
                 }
                 System.err.println(filename);
                 versionMap.put(filename, 0);
@@ -148,12 +174,16 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         }
     }
 
+    /**
+     * two args
+     * @param args
+     */
     public static void main(String [] args) {
         System.err.println("Cache server has started");
         serverport = Integer.parseInt(args[0]);
-        serverpath = args[1];
-        if (serverpath.charAt(serverpath.length()-1) != '/') {
-            serverpath += '/';
+        serverrootdir = args[1];
+        if (serverrootdir.charAt(serverrootdir.length()-1) != '/') {
+            serverrootdir += '/';
         }
 
         try {
@@ -167,9 +197,8 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         Server server = null;
         try {
             server = new Server();
-            final File folder = new File(serverpath);
+            final File folder = new File(serverrootdir);
             listFilesForFolder(folder, "");
-
         }
         catch(RemoteException e) {
             System.err.println("Failed to create server " + e);
