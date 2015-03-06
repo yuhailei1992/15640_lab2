@@ -25,6 +25,7 @@ class Proxy {
     public static int port;
     public static String proxyrootdir;
     public static long proxycachesize;
+    public static int CHUNKSIZE;
     /* objects */
     public static LRUCache cache;
     public static ReentrantLock lock;
@@ -215,24 +216,37 @@ class Proxy {
         public synchronized int getFileFromServer(String orig_path) {
             System.err.println("Proxy::getFileFromServer");
             try {
-                byte[] b = server.getFileContent(orig_path);
                 // get the complete path at the proxy
                 String proxy_path = proxyrootdir + orig_path;
-                if (Proxy.cache.insert(proxy_path, b.length)) {
+                long filesize = Proxy.server.getFileSize(orig_path);
+                if (Proxy.cache.insert(proxy_path, (int)filesize)) {
                 	System.err.println("Enough space. Just insert");
                 } else {
                 	System.err.println("No enough space");
                 	return -1;
                 }
                 // write the byte array to the file
+                RandomAccessFile raf = new RandomAccessFile(proxy_path, "rw");
+            	
+            	long cnt = 0;
+            	while (cnt < filesize) {
+            		long bytearraysize = Math.min(CHUNKSIZE, filesize - cnt);
+            		byte[] b = Proxy.server.readInChunk(orig_path, cnt, bytearraysize);
+            		raf.write(b);
+            		cnt += b.length;
+            	}
+            	raf.close();
+            	/*
                 FileOutputStream fos = new FileOutputStream(proxy_path);
                 fos.write(b);
                 fos.close();
+                */
                 Proxy.version_map.put(orig_path, server.getVersion(orig_path));
                 // cache
                 Proxy.latest_map.put(orig_path, proxy_path);
                 Proxy.origin_map.put(proxy_path, orig_path);
                 Proxy.open_map.put(proxy_path, 0);
+                
                 
             } catch (Exception e) {
                 System.err.println("Error in getFileFromServer");
@@ -248,18 +262,34 @@ class Proxy {
         	System.err.println("Proxy::getFileFromServer2");
         	String local_path = getLocalPath(proxyrootdir + orig_path);
         	try {
-                byte[] b = server.getFileContent(orig_path);
-                // get the complete path at the proxy
-                if (Proxy.cache.insert(local_path, b.length)) {
+        		// chunk
+                long filesize = Proxy.server.getFileSize(orig_path);
+                
+                if (Proxy.cache.insert(local_path, (int)filesize)) {
                 	System.err.println("getFileFromServer2:Enough space. Just insert");
                 } else {
                 	System.err.println("getFileFromServer2:No enough space");
                 	return null;
                 }
+                
                 // write the byte array to the file
+                RandomAccessFile raf = new RandomAccessFile(local_path, "rw");
+            	
+            	long cnt = 0;
+            	while (cnt < filesize) {
+            		long bytearraysize = Math.min(CHUNKSIZE, filesize - cnt);
+            		byte[] b = Proxy.server.readInChunk(orig_path, cnt, bytearraysize);
+            		raf.write(b);
+            		cnt += b.length;
+            	}
+            	raf.close();
+
+                // write the byte array to the file
+            	/*
                 FileOutputStream fos = new FileOutputStream(local_path);
                 fos.write(b);
                 fos.close();
+                */
                 Proxy.version_map.put(orig_path, server.getVersion(orig_path));
                 // update hashmaps
                 System.err.println("getFileFromServer2:: origin and new path are " + orig_path + " and " + local_path);
@@ -659,7 +689,6 @@ class Proxy {
             if (this.path_map.containsKey(fd)) {
                 String proxy_path = this.path_map.get(fd);
                 // you cannot read a directory
-                
                 if (this.prop_map.get(proxy_path).isDirectory) {
                     System.err.println("Proxy:: read. Error! you cannot read a directory");
                     return Errors.EISDIR;
@@ -763,6 +792,9 @@ class Proxy {
      */
     public static void main(String[] args) throws IOException {
         // set static variables 
+    	// show memory size
+    	System.err.println("System mem is " + Runtime.getRuntime().freeMemory());
+    	Proxy.CHUNKSIZE = 1000;// set to 1M
         Proxy.ip = args[0];
         Proxy.port = Integer.parseInt(args[1]);
         Proxy.proxyrootdir = args[2];

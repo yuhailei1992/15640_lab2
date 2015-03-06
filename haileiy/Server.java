@@ -10,22 +10,24 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 	// static variables
     public static String serverrootdir;
     public static int serverport;
+    public static ConcurrentHashMap<String, RandomAccessFile> rafMap;
     // constructor
     public Server() throws RemoteException {
         versionMap = new ConcurrentHashMap<String, Integer>();
+        rafMap = new ConcurrentHashMap<String, RandomAccessFile>();
     }
     
     public long getFileSize(String orig_path) throws RemoteException {
     	long size = 0;
     	try {
-    		File f = new File(orig_path);
+    		File f = new File(serverrootdir + orig_path);
     		size = f.length();
     	} catch (Exception e) {
     		e.printStackTrace();
     	}
     	return size;
     }
-    
+
     /**
      * 
      */
@@ -51,6 +53,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         }
     	return -1;
     }
+    
     public int getVersion(String orig_path) throws RemoteException {
         System.err.println("Server::getVersion");
         int ver = 0;
@@ -139,6 +142,62 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
             e1.printStackTrace();
         }
         return b;
+    }
+    /*
+    public byte[] readInChunk(String path, long start_offset, long chunksize) throws RemoteException {
+    	System.err.println("Server::readInChunk");
+    	// 1, check if the path exists
+    	String server_path = serverrootdir + path;
+    	byte[] b = new byte[(int)chunksize];
+    	RandomAccessFile raf = null;
+    	int size = 0;
+    	try {
+    		if (rafMap.containsKey(server_path)) {//this path is already opened
+        		raf = rafMap.get(server_path);
+        	} else{
+        		raf = new RandomAccessFile(server_path, "r");
+        		rafMap.put(server_path, raf);
+        	}
+        // 2, read a chunk
+            size = raf.read(b);
+            return b;
+    	} catch (Exception e) {
+    		e.printStackTrace();
+    	}
+    	// if the size is smaller than expected
+    	if (size < chunksize) {
+    		System.err.println("Readinchunks has come to the end");
+    		try {
+    			raf.close();
+    			rafMap.remove(server_path);
+    		} catch (Exception e) {
+    			e.printStackTrace();
+    		}
+    	}
+    	return b;
+    }*/
+    
+    public byte[] readInChunk(String path, long start_offset, long chunksize) throws RemoteException {
+    	System.err.println("Server::readInChunk");
+    	// 1, check if the path exists
+    	String server_path = serverrootdir + path;
+    	byte[] b = new byte[(int)chunksize];
+    	RandomAccessFile raf = null;
+    	try {
+    		// 2, read a chunk
+    		raf = new RandomAccessFile(server_path, "r");
+    		raf.seek(start_offset);
+            raf.read(b);
+            raf.close();
+            return b;
+    	} catch (Exception e) {
+    		e.printStackTrace();
+    	}
+    	return b;
+    }
+    
+    public int writeInChunk(String path, long start_offset, byte[] b) throws RemoteException {
+    	return 0;
     }
     
     /**

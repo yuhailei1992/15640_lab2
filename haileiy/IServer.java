@@ -10,4 +10,6 @@ public interface IServer extends Remote {
     public void writeToServer (String path, byte[] b) throws RemoteException;
     public int removeFile(String orig_path) throws RemoteException;
     public int createFile(String orig_path) throws RemoteException;
+    public byte[] readInChunk(String path, long start_offset, long readsize) throws RemoteException;
+    public int writeInChunk(String path, long start_offset, byte[] b) throws RemoteException;
 }
