@@ -25,12 +25,12 @@ class Proxy {
     public static int port;
     public static String proxyrootdir;
     public static long proxycachesize;
-    
+    /* objects */
     public static LRUCache cache;
     public static ReentrantLock lock;
     public static IServer server;
     public static FileDescriptor fd;
-    
+    /* hashmaps */
     public static ConcurrentHashMap<String, Integer> version_map;
     public static ConcurrentHashMap<String, Integer> open_map;
     public static ConcurrentHashMap<String, String> latest_map;
@@ -224,7 +224,6 @@ class Proxy {
                 	System.err.println("No enough space");
                 	return -1;
                 }
-                
                 // write the byte array to the file
                 FileOutputStream fos = new FileOutputStream(proxy_path);
                 fos.write(b);
@@ -329,10 +328,8 @@ class Proxy {
         	/******************************************************************
         	 * stage 1: check pathname, create subdirectories on demand
         	 *****************************************************************/
-        	//System.err.println("Very first orig_path is " + orig_path);
         	assert this.fd_map.keySet().size() == this.path_map.keySet().size();
         	orig_path = simplifyPath(orig_path);
-        	//System.err.println("simplified orig_path is " + orig_path);
             if (orig_path.contains("/")) {
             	// find the last position of '/'
             	int pos = 0;
@@ -353,7 +350,7 @@ class Proxy {
             if (Proxy.latest_map.containsKey(orig_path)) {
             	proxy_path = Proxy.latest_map.get(orig_path);
             }
-            System.err.println("Proxy:open:: The latest path is " + proxy_path);
+            System.err.println(">>>>Proxy:open:: The latest path is " + proxy_path);
             File localfile = null;
             try {
                 localfile = new File(proxy_path);
@@ -363,21 +360,33 @@ class Proxy {
                     int server_version = server.getVersion(orig_path);
                     int proxy_version = getProxyVersion(orig_path);
                     if (server_version == -1) {
-                        System.err.println("Open::File exists at proxy, but not server. This is weird. ");
+                        System.err.println("Open:File exists at proxy, but not server. This is weird. ");
                         // create one and upload
                     } else {
                         if (server_version == proxy_version) {
-                            System.err.println("Open::The proxy has a up-to-date version: version " + proxy_version);
+                            System.err.println("Open:The proxy has a up-to-date version: version " + proxy_version);
                             if (o == OpenOption.READ) {
                             	// READONLY: DO NOTHING
                             } else {
                             	// WRITE: fork a new copy
-                            	System.err.println("Open:: write, need to fork a local copy");
+                            	System.err.println("Open:write, need to fork a local copy");
                             	proxy_path = forkFile(proxy_path);
-                            	System.err.println("forked file. the new file path is " + proxy_path);
+                            	System.err.println("Open:forked file. the new file path is " + proxy_path);
                             }
                         } else {// not the latest
-                            System.err.println("Open::The proxy has a stale version" + proxy_version + ", must fetch " + server_version + "from server");
+                            System.err.println("Open:The proxy has a stale version" + proxy_version + ", must fetch " + server_version + "from server");
+                            // try to delete the old copy
+                            String stale_master_copy = latest_map.get(orig_path);
+                            File todelete = null;
+                            try {
+                            	todelete = new File(stale_master_copy);
+                            	todelete.delete();
+                            	// remove from LRU
+                            	Proxy.cache.removeNode(stale_master_copy);
+                            	System.err.println("Open:deleted stale master copy");
+                            } catch (Exception e) {
+                            	e.printStackTrace();
+                            }
                             // fetch from server
                             proxy_path = getFileFromServer2(orig_path);
                             if (proxy_path == null) {
@@ -429,9 +438,14 @@ class Proxy {
             try {
                 f = new File(proxy_path);
                 // 1, check if the file already exists. if so, and if option is CREATE_NEW, return Error
-                if (o == OpenOption.CREATE_NEW && f.exists()) {
-                    System.err.println("Proxy::open. ERROR: CREATE_NEW + file already exists");
-                    return Errors.EEXIST;
+                if (o == OpenOption.CREATE_NEW) {
+                	if (f.exists()) {// error
+	                    System.err.println("Proxy::open. ERROR: CREATE_NEW + file already exists");
+	                    return Errors.EEXIST;
+                	} else {// should create the file at server and proxy
+                		f.createNewFile();
+                		Proxy.server.createFile(orig_path);
+                	}
                 }
                 // 2, directories can only be opened readonly
                 if (f.isDirectory() && (o != OpenOption.READ)) {
@@ -449,7 +463,6 @@ class Proxy {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-
             // 2, check if the fd is already in hashmap
             if (this.fd_map.containsKey(proxy_path)) {
                 System.err.println("Proxy::open. Already have this file in HashMap");
@@ -509,11 +522,10 @@ class Proxy {
          * move the file to head of LRU
          */
         public synchronized int close( int fd ) {
-            System.err.println("Proxy::close. fd is " + fd);
+            System.err.println("<<<<Proxy::close. fd is " + fd);
             assert this.fd_map.keySet().size() == this.path_map.keySet().size();
             
             if (this.path_map.containsKey(fd)) { // if the file is already opened
-            	
                 String proxy_path = this.path_map.get(fd);
                 Proxy.cache.get(proxy_path); // move to the head of LRU
                 String orig_path = Proxy.origin_map.get(proxy_path);

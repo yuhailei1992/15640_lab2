@@ -104,6 +104,12 @@ public class LRUCache {
             return evicted;
         }
     }
+    
+    public boolean removeNode(String path) {
+    	System.err.println("Cache:remove node " + path);
+    	Entry todelete = hm.get(path);
+    	return remove_node(todelete);
+    }
 
     public boolean remove_node (Entry node) {
     	if (node == tail || node == head) {
@@ -132,15 +138,19 @@ public class LRUCache {
             set_new_head(node);
         }
     }
-    
+    /**
+     * show cache in a friendly style
+     */
     public void showCache() {
     	Entry node = head.next;
-    	System.err.println("Showing cache");
+    	System.err.println("====================Cache start====================");
+    	int i = 0;
     	while (node != tail) {
-    		System.err.println(node.path + " size is " + node.size);
+    		System.err.println("#" + i + node.path + " size is " + node.size);
     		node = node.next;
+    		i++;
     	}
-    	System.err.println("Show cache ends here");
+    	System.err.println("********************Cache end ********************");
     }
     /*
     public static void main(String [] args) {

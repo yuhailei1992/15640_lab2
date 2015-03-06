@@ -44,7 +44,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
                 f.delete();
                 return 0;
             } else {
-                System.err.println("Proxy::unlink. file doesn't exist at all");
+                System.err.println("Error:Proxy:unlink. file doesn't exist at all");
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -68,7 +68,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
 
     public File getFile(String orig_path) throws RemoteException {
         System.err.println("Server::getFile");
-        // return the file
+        // return the file object
         try {
             String localpath = serverrootdir + orig_path;
             File file = new File(localpath);
@@ -84,8 +84,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
      */
     public synchronized void writeToServer (String orig_path, byte[] b) throws RemoteException {
         System.err.println("Server::writeToServer");
-        //System.err.println(Arrays.toString(b));
-        // update versionmap first
+        // 1, update versionmap first
         if (versionMap.containsKey(orig_path)) {
             versionMap.put(orig_path, versionMap.get(orig_path) + 1);
             System.err.println("The new version num is " + versionMap.get(orig_path));
@@ -93,13 +92,11 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
             versionMap.put(orig_path, 1);
         }
 
-        // if the file already exists, remove it and write
-
-        // then, write the byte array to file
+        // 2, write the byte array to file
         String localpath = serverrootdir + orig_path;
         File file = new File(localpath);
 
-        // check if the file already exists
+        // 2.1, check if the file already exists. if it exists, delete and write
         if (file.exists()) {
             System.err.println("The file already exists, need to delete it first, then write");
             System.err.println("The file is " + localpath + "of version " + versionMap.get(orig_path));
@@ -109,7 +106,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
                 System.err.println("Delete operation failed.");
             }
         }
-        // write to the file
+        // 3, write to the file
         try {
             FileOutputStream fos = new FileOutputStream(localpath);
             fos.write(b);
@@ -142,6 +139,22 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
             e1.printStackTrace();
         }
         return b;
+    }
+    
+    /**
+     * return 0 on success, -1 on failure
+     */
+    public int createFile(String orig_path) throws RemoteException {
+    	System.err.println("Server:createFile " + orig_path);
+    	String server_path = serverrootdir + orig_path;
+    	File file = new File(server_path);
+    	try {
+    		file.createNewFile();
+    		return 0;
+    	} catch (Exception e) {
+    		e.printStackTrace();
+    	}
+    	return -1;
     }
 
     public static ConcurrentHashMap<String, Integer> versionMap;
