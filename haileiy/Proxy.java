@@ -120,9 +120,8 @@ class Proxy {
         	java.util.Date date= new java.util.Date();
         	Timestamp ts = new Timestamp(date.getTime());
        	 	assert Proxy.origin_map.get(old_path) != null;
-       	 	String tsstring = ts.toString();
-       	 	String newstr = tsstring.replaceAll("\\s+", "at");
-        	return proxyrootdir + Proxy.origin_map.get(old_path) + "_at_" + newstr;
+       	 	String tsstring = ts.toString().replaceAll("\\s+", "at");
+        	return proxyrootdir + Proxy.origin_map.get(old_path) + "_at_" + tsstring;
         }
         
         /**
@@ -214,13 +213,11 @@ class Proxy {
          * this function will get the file from server, then write it to local directory
          * also, it will update the versionmap
          */
-        public synchronized int getFileFromServer(String orig_path) {
+        public synchronized int getFileFromServer(String orig_path, int serverversion, int filesize) {
             try {
                 // get the complete path at the proxy
                 String proxy_path = proxyrootdir + orig_path;
-                int[] fileinfo = Proxy.server.getVersion(orig_path);
-        		int serverversion = fileinfo[0];
-        		long filesize = (long)fileinfo[1];
+                // try to insert into cache
                 int rv = Proxy.cache.insert(proxy_path, (int)filesize);
                 if (rv == 0) {
                 	System.err.println("Enough space. Just insert");
@@ -230,7 +227,7 @@ class Proxy {
                 }
                 // write the byte array to the file
                 RandomAccessFile raf = new RandomAccessFile(proxy_path, "rw");
-            	
+            	// write in chunks
             	long cnt = 0;
             	while (cnt < filesize) {
             		long bytearraysize = Math.min(CHUNKSIZE, filesize - cnt);
@@ -240,7 +237,7 @@ class Proxy {
             	}
             	raf.close();
                 Proxy.version_map.put(orig_path, serverversion);
-                // cache
+                // update hashmaps
                 Proxy.latest_map.put(orig_path, proxy_path);
                 Proxy.origin_map.put(proxy_path, orig_path);
                 Proxy.open_map.put(proxy_path, 0);
@@ -255,14 +252,14 @@ class Proxy {
         /**
          * get a copy from server
          */
-        public synchronized String getFileFromServer2(String orig_path) {
+        public synchronized String getFileFromServer2(String orig_path, int serverversion, int filesize) {
         	String local_path = getLocalPath(proxyrootdir + orig_path);
         	
         	try {
         		// chunk
-        		int[] fileinfo = Proxy.server.getVersion(orig_path);
-        		int serverversion = fileinfo[0];
-        		long filesize = (long)fileinfo[1];
+        		//int[] fileinfo = Proxy.server.getVersion(orig_path);
+        		//int serverversion = fileinfo[0];
+        		//long filesize = (long)fileinfo[1];
                 int rv = Proxy.cache.insert(local_path, (int)filesize);
                 if (rv == 0) {
                 	System.err.println("getFileFromServer2:Enough space. Just insert");
@@ -273,7 +270,7 @@ class Proxy {
                 
                 // write the byte array to the file
                 RandomAccessFile raf = new RandomAccessFile(local_path, "rw");
-            	
+            	// read in chunks
             	long cnt = 0;
             	while (cnt < filesize) {
             		long bytearraysize = Math.min(CHUNKSIZE, filesize - cnt);
@@ -300,7 +297,6 @@ class Proxy {
          */
         public synchronized void createFolder (String folderpath) {
             File file = new File(proxyrootdir + folderpath);
-            // System.err.println("Createfolder:: " + proxyrootdir + folderpath);
             if (!file.exists()) {
                 if (file.mkdir()) {
                     System.out.println("Directory is created!");
@@ -383,7 +379,9 @@ class Proxy {
             try {
                 localfile = new File(proxy_path);
                 // if the file exists at proxy, check if it is the latest version
-                int server_version = server.getVersion(orig_path)[0];
+                int[] info = server.getVersion(orig_path);
+                int server_version = info[0];
+                int filesize = info[1];
                 if (localfile.exists()) {
                 	// compare version
                     int proxy_version = getProxyVersion(orig_path);
@@ -411,7 +409,7 @@ class Proxy {
 	                            Proxy.cache.removeNode(stale_master_copy);
                             }
                             // fetch from server
-                            proxy_path = getFileFromServer2(orig_path);
+                            proxy_path = getFileFromServer2(orig_path, server_version, filesize);
                             if (proxy_path == null) {
                             	return Errors.ENOMEM;
                             }
@@ -434,7 +432,7 @@ class Proxy {
                         System.err.println("Open::No such file at server, must create one and upload it");
                     } else { // exists at server
                         System.err.println("Open::File exists at server, but no local copy, fetching from server...");
-                        if (getFileFromServer(orig_path) == -1) return Errors.ENOMEM;
+                        if (getFileFromServer(orig_path, server_version, filesize) == -1) return Errors.ENOMEM;
                         Proxy.version_map.put(orig_path, server_version);
                         System.err.println("Open::Now we have file of version " + getProxyVersion(orig_path));
                         if (o == OpenOption.READ) {

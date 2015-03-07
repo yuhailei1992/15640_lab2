@@ -215,9 +215,9 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         try {
             Naming.rebind(String.format("//127.0.0.1:%d/ServerService", serverport), server);
         } catch (RemoteException e) {
-            System.err.println(e); //you probably want to do some decent logging here
+            System.err.println(e);
         } catch (MalformedURLException e) {
-            System.err.println(e); //same here
+            System.err.println(e);
         }
     }
 }
