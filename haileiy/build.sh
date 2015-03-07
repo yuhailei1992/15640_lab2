@@ -1,1 +1,2 @@
-javac IServer.java Proxy.java Server.java
+make clean
+make

@@ -21,17 +21,6 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         versionMap = new ConcurrentHashMap<String, Integer>();
         rafMap = new ConcurrentHashMap<String, RandomAccessFile>();
     }
-    
-    public long getFileSize(String orig_path) throws RemoteException {
-    	long size = 0;
-    	try {
-    		File f = new File(serverrootdir + orig_path);
-    		size = f.length();
-    	} catch (Exception e) {
-    		e.printStackTrace();
-    	}
-    	return size;
-    }
 
     /**
      * 
@@ -63,9 +52,12 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
      * get version number of a file.
      * -1 represents non-existency
      */
-    public int getVersion(String orig_path) throws RemoteException {
+    public int[] getVersion(String orig_path) throws RemoteException {
         int ver = 0;
+        int size = 0;
         try {
+        	File f = new File(serverrootdir + orig_path);
+        	size = (int)f.length();
             if (versionMap.containsKey(orig_path)) {
                 ver = versionMap.get(orig_path);
             } else {
@@ -75,7 +67,10 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
             System.err.println("Error in getVersion");
         }
         System.err.println("Server::getVersion for file " + orig_path + " is " + ver);
-        return ver;
+        int[] ret = new int[2];
+        ret[0] = ver;
+        ret[1] = size;
+        return ret;
     }
 
     /**
@@ -102,13 +97,10 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
             }
         }
     }
-    
-    public synchronized void writeToServer (String orig_path, byte[] b) throws RemoteException {
-    	
-    }
+
     
     public void writeInChunk(String orig_path, long start_offset, byte[] b) throws RemoteException {
-    	//System.err.println("Server::writeInChunk");
+    	System.err.println("Server::writeInChunk");
 
         // 2, write the byte array to file
         String server_path = serverrootdir + orig_path;
@@ -123,33 +115,8 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
         }
     }
 
-    /**
-     * this function will get the content of a file provided its path
-     */
-    public byte[] getFileContent(String orig_path) throws RemoteException {
-        System.err.println("Server::getFileContent");
-        String localpath = serverrootdir + orig_path;
-
-        File file = new File(localpath);
-
-        byte[] b = new byte[(int) file.length()];
-        try {
-            FileInputStream fileInputStream = new FileInputStream(file);
-            fileInputStream.read(b);
-            fileInputStream.close();
-        } catch (FileNotFoundException e) {
-            System.err.println("File Not Found.");
-            e.printStackTrace();
-        }
-        catch (IOException e1) {
-            System.err.println("Error Reading The File.");
-            e1.printStackTrace();
-        }
-        return b;
-    }
-    
     public byte[] readInChunk(String path, long start_offset, long chunksize) throws RemoteException {
-    	// System.err.println("Server::readInChunk");
+    	System.err.println("Server::readInChunk");
     	// 1, check if the path exists
     	String server_path = serverrootdir + path;
     	byte[] b = new byte[(int)chunksize];
@@ -171,7 +138,7 @@ public class Server extends UnicastRemoteObject implements IServer, Serializable
     /**
      * return 0 on success, -1 on failure
      */
-    public int createFile(String orig_path) throws RemoteException {
+    public int createServerFile(String orig_path) throws RemoteException {
     	System.err.println("Server:createFile " + orig_path);
     	String server_path = serverrootdir + orig_path;
     	File file = new File(server_path);

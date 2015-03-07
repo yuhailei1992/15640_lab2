@@ -30,7 +30,7 @@ public class LRUCache {
 
     /**
      * when get file by its path, move it to the head
-     * return the path on success, return null on failure (the
+     * return the path on success, return null on failure
      */
     public String get(String path) {
     	System.err.println("Cache: get " + path);
@@ -70,7 +70,7 @@ public class LRUCache {
 				return -1;
 			} else {
 				removeNode(p.path);
-				Proxy.removeFile(p.path);
+				Proxy.removeFileWithoutUpdatingCache(p.path);
 			}
 		}
 		
@@ -81,7 +81,7 @@ public class LRUCache {
     	// insert the node to the head
     	set_new_head(node);
     	hm.put(path, node);
-    	showCache();
+    	//showCache();
     	return 0;
     }
     
@@ -126,7 +126,7 @@ public class LRUCache {
     	int i = 0;
     	long totalsize = 0;
     	while (node != tail) {
-    		System.err.print("#" + i + node.path + "reference # " + Proxy.open_map.get(node.path) + "\t");
+    		System.err.print("#" + i + node.path + " reference # " + Proxy.open_map.get(node.path) + "\t");
     		totalsize += node.size;
     		node = node.next;
     		i++;
