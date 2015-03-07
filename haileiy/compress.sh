@@ -1,1 +1,1 @@
-tar cvzf ../haileiy.tgz Makefile *.java
+tar cvzf ../haileiy.tgz Makefile *.java *.pdf
